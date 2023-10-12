@@ -31,10 +31,12 @@
 Clone the repo, setup CARLA 0.9.10.1, and build the conda environment:
 
 ```Shell
-git clone https://github.com/autonomousvision/carla_garage.git
+git clone git@github.com:sarveshmayil/carla_garage.git
 cd carla_garage
 chmod +x setup_carla.sh
 ./setup_carla.sh
+chmod +x set_paths.sh
+. ./set_paths.sh
 conda env create -f environment.yml
 conda activate garage
 ```

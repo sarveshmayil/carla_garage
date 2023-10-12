@@ -133,7 +133,7 @@ dmypy.json
 
 # Custom
 evaluation/
-carla_0_9_10
+carla/
 /team_code_latest/model_ckpt
 /.idea
 /results
