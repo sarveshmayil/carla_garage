@@ -5,15 +5,19 @@ from agents.navigation.global_route_planner import GlobalRoutePlanner
 from agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
 from agents.navigation.controller import VehiclePIDController
 
+from typing import Tuple, Union
 
-def spawn_vehicle(world, location=(-6.446170, -79.055023, 0.275307), rotation=(0.0, 0.0, 0.0)) -> carla.Actor:
+def spawn_vehicle(world, location:Union[Tuple[float], carla.Location]=(-6.446170, -79.055023, 0.275307), rotation=(0.0, 0.0, 0.0)) -> carla.Actor:
     """
     This function spawn vehicles in the given spawn points. If no spawn 
     point is provided it spawns vehicle in this 
     position x=27.607,y=3.68402,z=0.02
     """
+    if not isinstance(location, carla.Location):
+        location = carla.Location(*location)
+
     spawnPoint = carla.Transform(
-        carla.Location(*location),
+        location,
         carla.Rotation(*rotation)
     )
     blueprint_library = world.get_blueprint_library()
@@ -87,8 +91,7 @@ if __name__ == "__main__":
 
     amap:carla.Map = world.get_map()
     sampling_resolution = 2
-    dao = GlobalRoutePlannerDAO(amap, sampling_resolution)
-    grp = GlobalRoutePlanner(dao)
+    grp = GlobalRoutePlanner(amap, sampling_resolution)
     grp.setup()
 
     spawn_points = amap.get_spawn_points()
@@ -105,7 +108,7 @@ if __name__ == "__main__":
         wps.append(w1[i][0])
         world.debug.draw_point(w1[i][0].transform.location, color=carla.Color(r=255, g=0, b=0), size=0.4, life_time=120.0)
 
-    vehicle=spawn_vehicle(world)
+    vehicle=spawn_vehicle(world, location=a)
     PID=setup_PID(vehicle)
 
     speed=30
