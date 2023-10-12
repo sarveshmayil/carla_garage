@@ -2,7 +2,6 @@ import carla
 import math
 
 from agents.navigation.global_route_planner import GlobalRoutePlanner
-from agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
 from agents.navigation.controller import VehiclePIDController
 
 from typing import Tuple, Union
@@ -87,12 +86,11 @@ def setup_PID(vehicle) -> VehiclePIDController:
 if __name__ == "__main__":
     client = carla.Client("localhost", 2000)
     client.set_timeout(10)
-    world:carla.World = client.load_world('Town03')
+    world:carla.World = client.load_world('Town01')
 
     amap:carla.Map = world.get_map()
     sampling_resolution = 2
     grp = GlobalRoutePlanner(amap, sampling_resolution)
-    grp.setup()
 
     spawn_points = amap.get_spawn_points()
     a = carla.Location(spawn_points[0].location)
