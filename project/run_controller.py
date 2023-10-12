@@ -97,14 +97,14 @@ if __name__ == "__main__":
     b = carla.Location(spawn_points[100].location)
     w1 = grp.trace_route(a, b) 
 
-    world.debug.draw_point(a, color=carla.Color(r=255, g=0, b=0), size=1.6, life_time=120.0)
+    world.debug.draw_point(a, color=carla.Color(r=0, g=255, b=0), size=1.6, life_time=120.0)
     world.debug.draw_point(b, color=carla.Color(r=255, g=0, b=0), size=1.6, life_time=120.0)
 
     wps=[]
 
     for i in range(len(w1)):
         wps.append(w1[i][0])
-        world.debug.draw_point(w1[i][0].transform.location, color=carla.Color(r=255, g=0, b=0), size=0.4, life_time=120.0)
+        world.debug.draw_point(w1[i][0].transform.location, color=carla.Color(r=0, g=0, b=255), size=0.4, life_time=120.0)
 
     vehicle=spawn_vehicle(world, location=a)
     PID=setup_PID(vehicle)
