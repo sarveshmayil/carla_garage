@@ -1,6 +1,7 @@
 import carla
 from math import sqrt
 
+from control.controller_base import BaseController
 from agents.tools.misc import draw_waypoints
 
 from typing import Tuple, Union
@@ -15,11 +16,11 @@ class Vehicle():
         return self.vehicle.get_location()
     
     @property
-    def controller(self):
+    def controller(self) -> BaseController:
         return self.controller
     
     @controller.setter
-    def controller(self, controller):
+    def controller(self, controller:BaseController):
         self.controller = controller
     
     @property
@@ -59,7 +60,7 @@ class Vehicle():
     def show_route(self, world):
         draw_waypoints(world, self.route)
 
-    def follow_route(self, target_speed=30, threshold=2.0, max_iters=10):
+    def follow_route(self, target_speed=30.0, threshold=2.0, max_iters=10):
         if self.route is None:
             raise Exception("No route was set. Use `set_route()` first.")
         
@@ -67,13 +68,13 @@ class Vehicle():
             veh_dist = self.dist(wp)
             i = 0
             while (veh_dist > threshold and i < max_iters):
-                control = self.controller.run_step(target_speed, wp)
+                control = self.controller.get_control((target_speed, wp))
                 self.vehicle.apply_control(control)
                 veh_dist = self.dist(wp)
                 i += 1
 
         # Stop vehicle at final waypoint
-        control = self.controller.run_step(0, self.route[-1])
+        control = self.controller.get_control((0.0, self.route[-1]))
         self.vehicle.apply_control(control)
 
             
