@@ -7,7 +7,8 @@ from agents.tools.misc import draw_waypoints
 from typing import Tuple, Union, Optional
 
 class Vehicle():
-    def __init__(self, vehicle:Optional[carla.Actor]=None) -> None:
+    def __init__(self, world:carla.World, vehicle:Optional[carla.Actor]=None) -> None:
+        self._world:carla.World = world
         self._vehicle:carla.Actor = vehicle
         self.route = []
 
@@ -31,9 +32,11 @@ class Vehicle():
     def planner(self, planner):
         self._planner = planner
 
+    def get_world(self) -> carla.World:
+        return self._world
+
     def spawn(
         self,
-        world:carla.World,
         location:Union[Tuple[float], carla.Location],
         rotation:Union[Tuple[float], carla.Rotation]=(0.0, 0.0, 0.0),
         vehicle_idx=0
@@ -47,18 +50,18 @@ class Vehicle():
 
         blueprint_library = self.world.get_blueprint_library()
         blueprint:carla.ActorBlueprint = blueprint_library.filter('vehicle.*')[vehicle_idx]
-        self._vehicle = world.spawn_actor(blueprint, spawnPoint)
+        self._vehicle = self._world.spawn_actor(blueprint, spawnPoint)
 
     def dist(self, target) -> float:
         vehicle_loc = self.location
-        dist = sqrt( (target.transform.location.x - vehicle_loc.x)**2 + (target.transform.location.y - vehicle_loc.y)**2 )
+        dist = sqrt((target.transform.location.x - vehicle_loc.x)**2 + (target.transform.location.y - vehicle_loc.y)**2)
         return dist
 
     def set_route(self, target:carla.Location):
         self.route = [wp[0] for wp in self._planner.trace_route(self.location, target)]
 
-    def show_route(self, world):
-        draw_waypoints(world, self.route)
+    def show_route(self):
+        draw_waypoints(self._world, self.route)
 
     def follow_route(self, target_speed=30.0, threshold=2.0, max_iters=10):
         if self.route is None:

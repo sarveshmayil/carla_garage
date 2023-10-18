@@ -1,12 +1,14 @@
 import carla
 
 from vehicle import Vehicle
+from control.pid_vehicle_control import PIDController
+
 from agents.navigation.controller import VehiclePIDController
 from agents.navigation.global_route_planner import GlobalRoutePlanner
 
 from typing import Dict
 
-def pid_controller(vehicle, lat_args:Dict[float]=None, long_args:Dict[float]=None):
+def pid_controller(vehicle:carla.Actor, lat_args:Dict[float]=None, long_args:Dict[float]=None, ours=True):
     if lat_args is None:
         args_lateral_dict = {
             'K_P': 1.95,
@@ -23,11 +25,14 @@ def pid_controller(vehicle, lat_args:Dict[float]=None, long_args:Dict[float]=Non
             'dt' : 0.1
         }
 
-    return VehiclePIDController(vehicle, args_lateral=args_lateral_dict, args_longitudinal=args_long_dict)
+    if ours:
+        return PIDController(vehicle, lateral_args=args_lateral_dict, longitudinal_args=args_long_dict)
+    else:
+        return VehiclePIDController(vehicle, args_lateral=args_lateral_dict, args_longitudinal=args_long_dict)
 
 if __name__ == "__main__":
     client = carla.Client("localhost", 2000)
-    client.set_timeout(10)
+    client.set_timeout(100)
     world:carla.World = client.load_world('Town01')
 
     wmap:carla.Map = world.get_map()
@@ -35,9 +40,9 @@ if __name__ == "__main__":
     a = carla.Location(spawn_points[0].location)
     b = carla.Location(spawn_points[100].location)
 
-    vehicle = Vehicle()
-    vehicle.spawn(world=world, location=a, vehicle_idx=7)
-    vehicle.controller = pid_controller(vehicle)
+    vehicle = Vehicle(world=world)
+    vehicle.spawn(location=a, vehicle_idx=7)
+    vehicle.controller = pid_controller(vehicle._vehicle)
     vehicle.planner = GlobalRoutePlanner(wmap, sampling_resolution=2)
     vehicle.set_route(target=b)
     vehicle.show_route()

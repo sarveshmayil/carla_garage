@@ -10,7 +10,7 @@ from typing import Dict, Tuple
 
 
 class PIDController(BaseController):
-    def __init__(self, vehicle, lateral_args:Dict[str,float], longitudinal_args:Dict[str,float], offset=0, **kwargs) -> None:
+    def __init__(self, vehicle:carla.Actor, lateral_args:Dict[str,float], longitudinal_args:Dict[str,float], offset=0, **kwargs) -> None:
         super().__init__(vehicle=vehicle, **kwargs)
         self.long_controller = PIDLongitudinalController(**longitudinal_args)
         self.lat_controller = PIDLateralController(offset=offset, **lateral_args)
@@ -34,6 +34,7 @@ class PIDController(BaseController):
         accel_command = self.long_controller.run_step(target_speed, current_speed)
         steer_command = self.lat_controller.run_step(waypoint, self._vehicle.get_transform())
 
+        # Cap throttle and brake commands based on specified max values
         if accel_command > 0.0:
             control.throttle = min(accel_command, self.max_throttle)
             control.brake = 0.0
