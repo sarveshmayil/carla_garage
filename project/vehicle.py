@@ -48,7 +48,7 @@ class Vehicle():
 
         spawnPoint = carla.Transform(location, rotation)
 
-        blueprint_library = self.world.get_blueprint_library()
+        blueprint_library = self._world.get_blueprint_library()
         blueprint:carla.ActorBlueprint = blueprint_library.filter('vehicle.*')[vehicle_idx]
         self._vehicle = self._world.spawn_actor(blueprint, spawnPoint)
 

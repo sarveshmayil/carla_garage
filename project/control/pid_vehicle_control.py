@@ -3,8 +3,8 @@ import numpy as np
 from math import acos
 from agents.tools.misc import get_speed
 
-from controller_base import BaseController
-from pid import PID
+from .controller_base import BaseController
+from .pid import PID
 
 from typing import Dict, Tuple
 

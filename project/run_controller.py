@@ -8,7 +8,7 @@ from agents.navigation.global_route_planner import GlobalRoutePlanner
 
 from typing import Dict
 
-def pid_controller(vehicle:carla.Actor, lat_args:Dict[float]=None, long_args:Dict[float]=None, ours=True):
+def pid_controller(vehicle:carla.Actor, lat_args:Dict[str, float]=None, long_args:Dict[str, float]=None, ours=True):
     if lat_args is None:
         args_lateral_dict = {
             'K_P': 1.95,
