@@ -138,6 +138,13 @@ class Vehicle():
         i = 0
         target_wp = self.route[0]
         while True:
+            
+            camera_offset = -5 * self._vehicle.get_transform().rotation.get_forward_vector() + \
+                            2 * self._vehicle.get_transform().rotation.get_up_vector()
+            camera_transform = self._vehicle.get_transform()
+            camera_transform.location += camera_offset
+            self.get_world().get_spectator().set_transform(camera_transform)
+
             control = self._controller.get_control((target_speed, target_wp))
             self._vehicle.apply_control(control)
             veh_dist = self.dist(target_wp)
