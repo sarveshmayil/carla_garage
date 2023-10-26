@@ -1,5 +1,8 @@
 import carla
+import numpy as np
 from math import sqrt
+import cv2
+import open3d as o3d
 
 from control.controller_base import BaseController
 from control.pid_vehicle_control import PIDController
@@ -69,6 +72,32 @@ class Vehicle():
         blueprint:carla.ActorBlueprint = blueprint_library.filter('vehicle.*')[vehicle_idx]
         self._vehicle = self._world.spawn_actor(blueprint, spawnPoint)
 
+        camera_blueprint = blueprint_library.find('sensor.camera.rgb')
+        camera_blueprint.set_attribute("image_size_x", "640")
+        camera_blueprint.set_attribute("image_size_y", "480")
+        camera_blueprint.set_attribute("fov", "110")
+        camera_init_transform = carla.Transform(carla.Location(z=0.7, x=2.5))
+        self._camera = self._world.spawn_actor(camera_blueprint,camera_init_transform ,attach_to=self._vehicle)
+
+        lidar_blueprint = blueprint_library.find('sensor.lidar.ray_cast')
+        lidar_init_transform = carla.Transform(carla.Location(z=2, x=0))
+        self._lidar = self._world.spawn_actor(lidar_blueprint, lidar_init_transform ,attach_to=self._vehicle)
+
+    def camera_callback(self, image, data_dict):
+        i = np.reshape(np.array(image.raw_data), (480, 640, 4))
+        data_dict["image"] = i
+
+
+    def lidar_callback(self, scan, data_dict):
+        point_cloud = np.array(scan.raw_data)
+        xyzi = np.reshape(point_cloud, (-1,4))
+        xyz = self.lidar_to_ego_coordinate(xyzi)
+        data_dict["lidar"] = xyz
+
+
+        
+
+
     def dist(self, target) -> float:
         """
         Determines distance between vehicle and target location.
@@ -137,17 +166,40 @@ class Vehicle():
 
         i = 0
         target_wp = self.route[0]
+
+        pcl_vis = o3d.visualization.Visualizer()
+        pcl_vis_control = o3d.visualization.ViewControl()
+        pcl_vis.create_window(height=480, width=640)
+        pcl = o3d.geometry.PointCloud()
+        pcl.points = o3d.utility.Vector3dVector(np.random.rand(10,3))
+        pcl_vis.add_geometry(pcl)
+
+        sensor_data = {"image": np.zeros((480, 640, 4)), "lidar": pcl.points}
+        self._camera.listen(lambda image: self.camera_callback(image, sensor_data))   
+        self._lidar.listen(lambda scan: self.lidar_callback(scan, sensor_data))        
+
         while True:
             
-            camera_offset = -5 * self._vehicle.get_transform().rotation.get_forward_vector() + \
+            spectator_offset = -5 * self._vehicle.get_transform().rotation.get_forward_vector() + \
                             2 * self._vehicle.get_transform().rotation.get_up_vector()
-            camera_transform = self._vehicle.get_transform()
-            camera_transform.location += camera_offset
-            self.get_world().get_spectator().set_transform(camera_transform)
+            spectator_transform = self._vehicle.get_transform()
+            spectator_transform.location += spectator_offset
+            self.get_world().get_spectator().set_transform(spectator_transform)
 
             control = self._controller.get_control((target_speed, target_wp))
             self._vehicle.apply_control(control)
             veh_dist = self.dist(target_wp)
+                
+            cv2.imshow("", sensor_data['image'])
+            cv2.waitKey(1)
+            pcl.points = o3d.utility.Vector3dVector(sensor_data["lidar"])
+            up_vector = np.array([self._vehicle.get_transform().rotation.get_up_vector().x, 
+                                    self._vehicle.get_transform().rotation.get_up_vector().y,
+                                    self._vehicle.get_transform().rotation.get_up_vector().z])
+            pcl_vis_control.set_front(-up_vector)
+            pcl_vis.update_geometry(pcl)
+            pcl_vis.poll_events()
+            pcl_vis.update_renderer()
 
             # If vehicle has reached waypoint, move to next waypoint
             if(veh_dist < threshold):
@@ -165,8 +217,32 @@ class Vehicle():
         control = self._controller.get_control((0.0, self.route[-1]))
         self._vehicle.apply_control(control)
 
+
+    def lidar_to_ego_coordinate(self, lidar):
+        """
+        Converts the LiDAR points given by the simulator into the ego agents
+        coordinate system
+        :param config: GlobalConfig, used to read out lidar orientation and location
+        :param lidar: the LiDAR point cloud as provided in the input of run_step
+        :return: lidar where the points are w.r.t. 0/0/0 of the car and the carla
+        coordinate system.
+        """
+        vehicle_transform = self._vehicle.get_transform()
+        yaw = vehicle_transform.rotation.yaw
+        rotation_matrix = np.array([[np.cos(yaw), -np.sin(yaw), 0.0], [np.sin(yaw), np.cos(yaw), 0.0], [0.0, 0.0, 1.0]])
+
+        translation = np.array([vehicle_transform.location.x, vehicle_transform.location.y, vehicle_transform.location.z]) + np.array([0, 0, 2])
+
+        # The double transpose is a trick to compute all the points together.
+        ego_lidar = np.matmul((lidar[:,:3] - translation), rotation_matrix[None,:,:]).squeeze(0)
+        ego_lidar = ego_lidar/np.sqrt((np.sum(np.square(ego_lidar),axis=1)))[:,None]
+
+        return ego_lidar
+
     def __del__(self):
         self._vehicle.destroy()
+        self._camera.destroy()
+        self._lidar.destroy()
 
             
 
