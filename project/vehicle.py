@@ -1,12 +1,15 @@
 import carla
 import numpy as np
+import torch
 from math import sqrt
 import cv2
 import open3d as o3d
 
+from config import Config
 from control.controller_base import BaseController
 from control.pid_vehicle_control import PIDController
 from utils.misc import draw_waypoints
+from leaderboard.leaderboard.envs.sensor_interface import CallBack, SensorInterface
 
 from typing import Tuple, Union, Optional, Dict
 
@@ -16,10 +19,16 @@ class Vehicle():
 
     Includes vehicle controller and planner.
     """
-    def __init__(self, world:carla.World, vehicle:Optional[carla.Actor]=None) -> None:
+    def __init__(self, world:carla.World, vehicle:Optional[carla.Actor]=None, device='cuda') -> None:
         self._world:carla.World = world
         self._vehicle:carla.Actor = vehicle
+        self.device = device
         self.route = []
+
+        self._sensor_interface = SensorInterface()
+        self._sensors = {}
+
+        self.config = Config()
 
     @property
     def location(self) -> carla.Location:
@@ -72,31 +81,72 @@ class Vehicle():
         blueprint:carla.ActorBlueprint = blueprint_library.filter('vehicle.*')[vehicle_idx]
         self._vehicle = self._world.spawn_actor(blueprint, spawnPoint)
 
-        camera_blueprint = blueprint_library.find('sensor.camera.rgb')
-        camera_blueprint.set_attribute("image_size_x", "640")
-        camera_blueprint.set_attribute("image_size_y", "480")
-        camera_blueprint.set_attribute("fov", "110")
-        camera_init_transform = carla.Transform(carla.Location(z=0.7, x=2.5))
-        self._camera = self._world.spawn_actor(camera_blueprint,camera_init_transform ,attach_to=self._vehicle)
+        self.setup_sensors()
 
-        lidar_blueprint = blueprint_library.find('sensor.lidar.ray_cast')
-        lidar_init_transform = carla.Transform(carla.Location(z=2, x=0))
-        self._lidar = self._world.spawn_actor(lidar_blueprint, lidar_init_transform ,attach_to=self._vehicle)
+        # camera_blueprint = blueprint_library.find('sensor.camera.rgb')
+        # camera_blueprint.set_attribute("image_size_x", "640")
+        # camera_blueprint.set_attribute("image_size_y", "480")
+        # camera_blueprint.set_attribute("fov", "110")
+        # camera_init_transform = carla.Transform(carla.Location(z=0.7, x=2.5))
+        # self._camera = self._world.spawn_actor(camera_blueprint,camera_init_transform ,attach_to=self._vehicle)
 
-    def camera_callback(self, image, data_dict):
-        i = np.reshape(np.array(image.raw_data), (480, 640, 4))
-        data_dict["image"] = i
+        # lidar_blueprint = blueprint_library.find('sensor.lidar.ray_cast')
+        # lidar_init_transform = carla.Transform(carla.Location(z=2, x=0))
+        # self._lidar = self._world.spawn_actor(lidar_blueprint, lidar_init_transform ,attach_to=self._vehicle)
+
+    def get_sensor_config(self):
+        sensors = []
+        for cam in self.config.cameras:
+            sensors.append(cam)
+        if self.config.lidar is not None:
+            sensors.append(self.config.lidar)
+        return sensors
+
+    def setup_sensors(self):
+        bp_library = self._world.get_blueprint_library()
+
+        for sensor_spec in self.get_sensor_config():
+            bp = bp_library.find(str(sensor_spec['type']))
+            if sensor_spec['type'].startswith('sensor.camera'):
+                bp.set_attribute('image_size_x', str(sensor_spec['size'][0]))
+                bp.set_attribute('image_size_y', str(sensor_spec['size'][1]))
+                bp.set_attribute('fov', str(sensor_spec['fov']))
+                bp.set_attribute('lens_circle_multiplier', str(3.0))
+                bp.set_attribute('lens_circle_falloff', str(3.0))
+                bp.set_attribute('chromatic_aberration_intensity', str(0.5))
+                bp.set_attribute('chromatic_aberration_offset', str(0))
+                sensor_location = carla.Location(*sensor_spec['position'])
+                sensor_rotation = carla.Rotation(*sensor_spec['rotation'])
+            elif sensor_spec['type'].startswith('sensor.lidar'):
+                bp.set_attribute('range', str(85))
+                bp.set_attribute('rotation_frequency', str(sensor_spec['rot_freq']))
+                bp.set_attribute('channels', str(64))
+                bp.set_attribute('upper_fov', str(10))
+                bp.set_attribute('lower_fov', str(-30))
+                bp.set_attribute('points_per_second', str(600000))
+                bp.set_attribute('atmosphere_attenuation_rate', str(0.004))
+                bp.set_attribute('dropoff_general_rate', str(0.45))
+                bp.set_attribute('dropoff_intensity_limit', str(0.8))
+                bp.set_attribute('dropoff_zero_intensity', str(0.4))
+                sensor_location = carla.Location(*sensor_spec['position'])
+                sensor_rotation = carla.Rotation(*sensor_spec['rotation'])
+
+            # create sensor
+            sensor_transform = carla.Transform(sensor_location, sensor_rotation)
+            sensor = self._world.spawn_actor(bp, sensor_transform, attach_to=self._vehicle)
+            sensor.listen(CallBack(sensor_spec['id'], sensor_spec['type'], sensor, self._sensor_interface))
+            self._sensors[sensor_spec['id']] = sensor
+
+    # def camera_callback(self, image, data_dict):
+    #     i = np.reshape(np.array(image.raw_data), (480, 640, 4))
+    #     data_dict["image"] = i
 
 
-    def lidar_callback(self, scan, data_dict):
-        point_cloud = np.array(scan.raw_data)
-        xyzi = np.reshape(point_cloud, (-1,4))
-        xyz = self.lidar_to_ego_coordinate(xyzi)
-        data_dict["lidar"] = xyz
-
-
-        
-
+    # def lidar_callback(self, scan, data_dict):
+    #     point_cloud = np.array(scan.raw_data)
+    #     xyzi = np.reshape(point_cloud, (-1,4))
+    #     xyz = self.lidar_to_ego_coordinate(xyzi)
+    #     data_dict["lidar"] = xyz
 
     def dist(self, target) -> float:
         """
@@ -174,28 +224,30 @@ class Vehicle():
         pcl.points = o3d.utility.Vector3dVector(np.random.rand(10,3))
         pcl_vis.add_geometry(pcl)
 
-        sensor_data = {"image": np.zeros((480, 640, 4)), "lidar": pcl.points}
-        self._camera.listen(lambda image: self.camera_callback(image, sensor_data))   
-        self._lidar.listen(lambda scan: self.lidar_callback(scan, sensor_data))        
+        # sensor_data = {"image": np.zeros((480, 640, 4)), "lidar": pcl.points}
+        # self._camera.listen(lambda image: self.camera_callback(image, sensor_data))   
+        # self._lidar.listen(lambda scan: self.lidar_callback(scan, sensor_data))        
 
         while True:
-            
             spectator_offset = -5 * self._vehicle.get_transform().rotation.get_forward_vector() + \
-                            2 * self._vehicle.get_transform().rotation.get_up_vector()
+                                2 * self._vehicle.get_transform().rotation.get_up_vector()
             spectator_transform = self._vehicle.get_transform()
             spectator_transform.location += spectator_offset
-            self.get_world().get_spectator().set_transform(spectator_transform)
+            self._world.get_spectator().set_transform(spectator_transform)
 
             control = self._controller.get_control((target_speed, target_wp))
             self._vehicle.apply_control(control)
             veh_dist = self.dist(target_wp)
-                
-            cv2.imshow("", sensor_data['image'])
+            
+            data_dict = self._sensor_interface.get_data()
+            out_data = self.data_tick(data_dict)
+            cv2.imshow("", data_dict['rgb_front'])
             cv2.waitKey(1)
-            pcl.points = o3d.utility.Vector3dVector(sensor_data["lidar"])
+
+            pcl.points = o3d.utility.Vector3dVector(out_data['lidar'])
             up_vector = np.array([self._vehicle.get_transform().rotation.get_up_vector().x, 
-                                    self._vehicle.get_transform().rotation.get_up_vector().y,
-                                    self._vehicle.get_transform().rotation.get_up_vector().z])
+                                  self._vehicle.get_transform().rotation.get_up_vector().y,
+                                  self._vehicle.get_transform().rotation.get_up_vector().z])
             pcl_vis_control.set_front(-up_vector)
             pcl_vis.update_geometry(pcl)
             pcl_vis.poll_events()
@@ -217,32 +269,69 @@ class Vehicle():
         control = self._controller.get_control((0.0, self.route[-1]))
         self._vehicle.apply_control(control)
 
+    @torch.inference_mode()
+    def data_tick(
+        self,
+        data_dict:Dict[str, Union[carla.libcarla.Image, carla.libcarla.LidarMeasurement]]
+    ) -> Dict[str, Union[np.ndarray, torch.Tensor]]:
+        """
+        Post-process image, lidar data.
+
+        Adds jpg artifacts to image data, formats as torch tensor \\
+        Converts lidar scan to ego vehicle coordinate frame
+        """
+        out_data = {}
+        rgb = []
+        for id, sensor in self._sensors.items():
+            if sensor['type'].startswith('sensor.camera'):
+                image = data_dict[id][1][:,:,:3]
+                # Also add jpg artifacts at test time, because the training data was saved as jpg.
+                _, compressed_image = cv2.imencode('.jpg', image)
+                image = cv2.imdecode(compressed_image, cv2.IMREAD_UNCHANGED)
+                rgb_pos = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                # Switch to pytorch channel first order
+                rgb_pos = np.transpose(rgb_pos, (2, 0, 1))
+                rgb.append(rgb_pos)
+            elif sensor['type'].startswith('sensor.lidar'):
+                out_data['lidar'] = self.lidar_to_ego_coordinate(data_dict[id])
+
+        rgb = np.concatenate(rgb, axis=1)
+        rgb = torch.from_numpy(rgb).to(self.device, dtype=torch.float32).unsqueeze(0)
+        out_data['rgb'] = rgb
+
+        return out_data
 
     def lidar_to_ego_coordinate(self, lidar):
         """
         Converts the LiDAR points given by the simulator into the ego agents
         coordinate system
-        :param config: GlobalConfig, used to read out lidar orientation and location
         :param lidar: the LiDAR point cloud as provided in the input of run_step
         :return: lidar where the points are w.r.t. 0/0/0 of the car and the carla
         coordinate system.
         """
-        vehicle_transform = self._vehicle.get_transform()
-        yaw = vehicle_transform.rotation.yaw
-        rotation_matrix = np.array([[np.cos(yaw), -np.sin(yaw), 0.0], [np.sin(yaw), np.cos(yaw), 0.0], [0.0, 0.0, 1.0]])
-
-        translation = np.array([vehicle_transform.location.x, vehicle_transform.location.y, vehicle_transform.location.z]) + np.array([0, 0, 2])
+        yaw = np.deg2rad(self.config.lidar['rotation'][2])
+        rotation_matrix = np.array([[np.cos(yaw), -np.sin(yaw), 0.0],
+                                    [np.sin(yaw),  np.cos(yaw), 0.0],
+                                    [        0.0,          0.0, 1.0]])
+        translation = np.array(self.config.lidar['position'])
 
         # The double transpose is a trick to compute all the points together.
-        ego_lidar = np.matmul((lidar[:,:3] - translation), rotation_matrix[None,:,:]).squeeze(0)
-        ego_lidar = ego_lidar/np.sqrt((np.sum(np.square(ego_lidar),axis=1)))[:,None]
+        ego_lidar = (rotation_matrix @ lidar[1][:, :3].T).T + translation
+        # ego_lidar = np.matmul((lidar[:,:3] - translation), rotation_matrix[None,:,:]).squeeze(0)
+        # ego_lidar = ego_lidar/np.sqrt((np.sum(np.square(ego_lidar),axis=1)))[:,None]
 
         return ego_lidar
 
     def __del__(self):
         self._vehicle.destroy()
-        self._camera.destroy()
-        self._lidar.destroy()
+        for id in self._sensors.keys():
+            if self._sensors[id] is not None:
+                self._sensors[id].stop()
+                self._sensors[id].destroy()
+                self._sensors[id] = None
+        self._sensors = {}
+        # self._camera.destroy()
+        # self._lidar.destroy()
 
             
 
