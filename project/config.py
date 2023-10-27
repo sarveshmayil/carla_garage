@@ -17,6 +17,7 @@ class Config:
             "rotation": [0.0, 0.0, 0.0],   # [r p y]
             "rot_freq": 10,  # Hz of lidar sensor
             "points_per_sec": 600000,
+            "buffer_threshold": 60000,  # Min amount of points to collect before displaying
             "id": 'lidar'
         }
 
