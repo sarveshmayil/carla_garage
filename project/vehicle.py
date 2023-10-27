@@ -4,14 +4,18 @@ import torch
 from math import sqrt
 import cv2
 import open3d as o3d
+from matplotlib import cm
 
 from config import Config
 from control.controller_base import BaseController
 from control.pid_vehicle_control import PIDController
 from utils.misc import draw_waypoints
-from leaderboard.leaderboard.envs.sensor_interface import CallBack, SensorInterface
+from leaderboard.envs.sensor_interface import CallBack, SensorInterface
 
 from typing import Tuple, Union, Optional, Dict
+
+VIRIDIS = np.array(cm.get_cmap('plasma').colors)
+VID_RANGE = np.linspace(0.0, 1.0, VIRIDIS.shape[0])
 
 class Vehicle():
     """
@@ -123,7 +127,7 @@ class Vehicle():
                 bp.set_attribute('channels', str(64))
                 bp.set_attribute('upper_fov', str(10))
                 bp.set_attribute('lower_fov', str(-30))
-                bp.set_attribute('points_per_second', str(600000))
+                bp.set_attribute('points_per_second', str(sensor_spec['points_per_sec']))
                 bp.set_attribute('atmosphere_attenuation_rate', str(0.004))
                 bp.set_attribute('dropoff_general_rate', str(0.45))
                 bp.set_attribute('dropoff_intensity_limit', str(0.8))
@@ -218,16 +222,35 @@ class Vehicle():
         target_wp = self.route[0]
 
         pcl_vis = o3d.visualization.Visualizer()
+        #pcl_vis.get_render_option().point_size = 1
+        # pcl_vis.get_render_option().show_coordinate_frame = True
         pcl_vis_control = o3d.visualization.ViewControl()
         pcl_vis.create_window(height=480, width=640)
         pcl = o3d.geometry.PointCloud()
         pcl.points = o3d.utility.Vector3dVector(np.random.rand(10,3))
         pcl_vis.add_geometry(pcl)
 
+        axis = o3d.geometry.LineSet()
+        axis.points = o3d.utility.Vector3dVector(np.array([
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0]]))
+        axis.lines = o3d.utility.Vector2iVector(np.array([
+            [0, 1],
+            [0, 2],
+            [0, 3]]))
+        axis.colors = o3d.utility.Vector3dVector(np.array([
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0]]))
+        pcl_vis.add_geometry(axis)
+
         # sensor_data = {"image": np.zeros((480, 640, 4)), "lidar": pcl.points}
         # self._camera.listen(lambda image: self.camera_callback(image, sensor_data))   
-        # self._lidar.listen(lambda scan: self.lidar_callback(scan, sensor_data))        
+        # self._lidar.listen(lambda scan: self.lidar_callback(scan, sensor_data))     
 
+        lidar_buffer = np.zeros((1,3))
         while True:
             spectator_offset = -5 * self._vehicle.get_transform().rotation.get_forward_vector() + \
                                 2 * self._vehicle.get_transform().rotation.get_up_vector()
@@ -241,17 +264,25 @@ class Vehicle():
             
             data_dict = self._sensor_interface.get_data()
             out_data = self.data_tick(data_dict)
-            cv2.imshow("", data_dict['rgb_front'])
-            cv2.waitKey(1)
-
-            pcl.points = o3d.utility.Vector3dVector(out_data['lidar'])
-            up_vector = np.array([self._vehicle.get_transform().rotation.get_up_vector().x, 
-                                  self._vehicle.get_transform().rotation.get_up_vector().y,
-                                  self._vehicle.get_transform().rotation.get_up_vector().z])
-            pcl_vis_control.set_front(-up_vector)
-            pcl_vis.update_geometry(pcl)
-            pcl_vis.poll_events()
-            pcl_vis.update_renderer()
+            # cv2.imshow("", data_dict['rgb_front'][1])
+            # cv2.waitKey(1)
+            
+            lidar_buffer = np.vstack((lidar_buffer,out_data['lidar'][:,:3]))
+            if lidar_buffer.shape[0] > 60000:
+                lidar_buffer = lidar_buffer / np.max(lidar_buffer,axis=0)
+                pcl.points = o3d.utility.Vector3dVector(lidar_buffer)
+                up_vector = np.array([self._vehicle.get_transform().rotation.get_up_vector().x, 
+                                    self._vehicle.get_transform().rotation.get_up_vector().y,
+                                    self._vehicle.get_transform().rotation.get_up_vector().z])
+                forward_vector = np.array([self._vehicle.get_transform().rotation.get_forward_vector().x, 
+                                    self._vehicle.get_transform().rotation.get_forward_vector().y,
+                                    self._vehicle.get_transform().rotation.get_forward_vector().z])
+                pcl_vis_control.set_front(-up_vector)
+                pcl_vis_control.set_up(forward_vector)
+                pcl_vis.update_geometry(pcl)
+                pcl_vis.poll_events()
+                pcl_vis.update_renderer()
+                lidar_buffer = np.zeros((1,3))
 
             # If vehicle has reached waypoint, move to next waypoint
             if(veh_dist < threshold):
@@ -282,18 +313,26 @@ class Vehicle():
         """
         out_data = {}
         rgb = []
-        for id, sensor in self._sensors.items():
-            if sensor['type'].startswith('sensor.camera'):
+        for id in self._sensors.keys():
+            if id.startswith('rgb'):
                 image = data_dict[id][1][:,:,:3]
-                # Also add jpg artifacts at test time, because the training data was saved as jpg.
-                _, compressed_image = cv2.imencode('.jpg', image)
-                image = cv2.imdecode(compressed_image, cv2.IMREAD_UNCHANGED)
-                rgb_pos = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                # Switch to pytorch channel first order
-                rgb_pos = np.transpose(rgb_pos, (2, 0, 1))
-                rgb.append(rgb_pos)
-            elif sensor['type'].startswith('sensor.lidar'):
-                out_data['lidar'] = self.lidar_to_ego_coordinate(data_dict[id])
+                    # # Also add jpg artifacts at test time, because the training data was saved as jpg.
+                    # _, compressed_image = cv2.imencode('.jpg', image)
+                # image = cv2.imdecode(compressed_image, cv2.IMREAD_UNCHANGED)
+                # rgb_pos = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                # # Switch to pytorch channel first order
+                # rgb_pos = np.transpose(rgb_pos, (2, 0, 1))
+                # rgb.append(rgb_pos)
+                rgb.append(image)
+            elif id.startswith('lidar'):
+                lidar_points = self.lidar_to_ego_coordinate(data_dict[id])
+                intensity = lidar_points[:,-1]
+                intensity_col = 1.0 - np.log(intensity) / np.log(np.exp(-0.004 * 85))
+                int_color = np.c_[
+                    np.interp(intensity_col, VID_RANGE, VIRIDIS[:, 0]),
+                    np.interp(intensity_col, VID_RANGE, VIRIDIS[:, 1]),
+                    np.interp(intensity_col, VID_RANGE, VIRIDIS[:, 2])]
+                out_data['lidar'] = np.concatenate((lidar_points[:,:3], int_color), axis=1)
 
         rgb = np.concatenate(rgb, axis=1)
         rgb = torch.from_numpy(rgb).to(self.device, dtype=torch.float32).unsqueeze(0)
@@ -316,11 +355,13 @@ class Vehicle():
         translation = np.array(self.config.lidar['position'])
 
         # The double transpose is a trick to compute all the points together.
-        ego_lidar = (rotation_matrix @ lidar[1][:, :3].T).T + translation
+        #ego_lidar = (rotation_matrix @ lidar[1][:, :3].T).T + translation
+        lidar[1][:, :1] = -lidar[1][:, :1]
+        # intensity = lidar[1][:,-1]
         # ego_lidar = np.matmul((lidar[:,:3] - translation), rotation_matrix[None,:,:]).squeeze(0)
         # ego_lidar = ego_lidar/np.sqrt((np.sum(np.square(ego_lidar),axis=1)))[:,None]
 
-        return ego_lidar
+        return lidar[1]
 
     def __del__(self):
         self._vehicle.destroy()

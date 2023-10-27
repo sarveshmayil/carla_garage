@@ -14,8 +14,9 @@ class Config:
         self.lidar = {
             "type": 'sensor.lidar.ray_cast',
             "position": [0.0, 0.0, 2.5],  # [x y z] position wrt car
-            "rotation": [0.0, 0.0, -90.0],   # [r p y]
+            "rotation": [0.0, 0.0, 0.0],   # [r p y]
             "rot_freq": 10,  # Hz of lidar sensor
+            "points_per_sec": 600000,
             "id": 'lidar'
         }
 
