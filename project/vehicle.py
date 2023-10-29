@@ -10,6 +10,7 @@ from config import Config
 from control.controller_base import BaseController
 from control.pid_vehicle_control import PIDController
 from utils.misc import draw_waypoints
+from utils.lidar import *
 from leaderboard.leaderboard.envs.sensor_interface import CallBack, SensorInterface
 
 from typing import Tuple, Union, Optional, Dict
@@ -263,6 +264,9 @@ class Vehicle():
                 pcl_vis.update_geometry(pcl)
                 pcl_vis.poll_events()
                 pcl_vis.update_renderer()
+
+                lidar_bev = lidar_to_bev(lidar_buffer, visualize=True)
+
                 lidar_buffer = np.empty((0,3))
 
             # If vehicle has reached waypoint, move to next waypoint
@@ -306,7 +310,10 @@ class Vehicle():
                 # rgb.append(rgb_pos)
                 rgb.append(image)
             elif id.startswith('lidar'):
-                lidar_points = self.lidar_to_ego_coordinate(data_dict[id])
+                lidar_points = lidar_to_ego_coordinate(data_dict[id],
+                                                       lidar_pos=self.config.lidar['position'],
+                                                       lidar_rot=self.config.lidar['rotation'],
+                                                       intensity=True)
                 intensity = lidar_points[:,-1]
                 intensity_col = 1.0 - np.log(intensity) / np.log(np.exp(-0.004 * 85))
                 int_color = np.c_[
@@ -320,28 +327,6 @@ class Vehicle():
         out_data['rgb'] = rgb
 
         return out_data
-
-    def lidar_to_ego_coordinate(self, lidar):
-        """
-        Converts the LiDAR points given by the simulator into the ego agents
-        coordinate system
-        :param lidar: the LiDAR point cloud as provided in the input of run_step with shape (N,4)
-        :return: lidar where the points are w.r.t. 0/0/0 of the car and the carla
-        coordinate system with shape (N,4)
-        """
-        yaw = np.deg2rad(self.config.lidar['rotation'][2])
-        rotation_matrix = np.array([[np.cos(yaw), -np.sin(yaw), 0.0],
-                                    [np.sin(yaw),  np.cos(yaw), 0.0],
-                                    [        0.0,          0.0, 1.0]])
-        translation = np.array(self.config.lidar['position'])
-
-        # The double transpose is a trick to compute all the points together.
-        #ego_lidar = (rotation_matrix @ lidar[1][:, :3].T).T + translation
-        lidar[1][:, :1] = -lidar[1][:, :1]
-        # ego_lidar = np.matmul((lidar[:,:3] - translation), rotation_matrix[None,:,:]).squeeze(0)
-        # ego_lidar = ego_lidar/np.sqrt((np.sum(np.square(ego_lidar),axis=1)))[:,None]
-
-        return lidar[1]
 
     def __del__(self):
         self._vehicle.destroy()
