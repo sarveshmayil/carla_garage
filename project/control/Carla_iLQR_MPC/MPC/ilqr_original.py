@@ -1,14 +1,14 @@
 from jax import jit, jacfwd, jacrev, hessian, lax
-import jax.numpy as jnp
+import jax.numpy as np
 from jax.scipy.special import logsumexp
 import jax
 
-jnp.set_printoptions(precision=3)
+np.set_printoptions(precision=3)
 
 # from jax.config import config
 # config.update("jax_enable_x64", True)
 
-import numpy as np
+import numpy as onp
 
 import pickle
 import matplotlib.pyplot as plt
@@ -24,97 +24,84 @@ from car_env_for_MPC import *
 import os
 
 DT = 0.1# [s] delta time step, = 1/FPS_in_server
-N_X = 6
-N_U = 2
+N_X = 5
+N_U = 3
 TIME_STEPS = 50
 # MODEL_NAME = "bicycle_model_100000_v2_jax"
-# MODEL_NAME = "bicycle_model_100ms_20000_v4_jax"
-# model_path="../SystemID/model/net_{}.model".format(MODEL_NAME)
-# NN_W1, NN_W2, NN_W3, NN_LR_MEAN = pickle.load(open(model_path, mode="rb"))
+MODEL_NAME = "bicycle_model_100ms_20000_v4_jax"
+model_path="../SystemID/model/net_{}.model".format(MODEL_NAME)
+NN_W1, NN_W2, NN_W3, NN_LR_MEAN = pickle.load(open(model_path, mode="rb"))
 
 
 @jit
-def continuous_dynamics(state, action):
-    #state = [X, u, Y, v, PSI, r]
-    #action = [delta_f, F_x]
-    Nw=2
-    f=0.01
-    Iz=2667
-    a=1.35
-    b=1.45
-    By=0.27
-    Cy=1.2
-    Dy=0.7
-    Ey=-1.6
-    Shy=0
-    Svy=0
-    m=1400
-    g=9.806
-
-    delta_f = action[0]
-    F_x = action[1]
-
-    a_f = jnp.rad2deg(delta_f-jnp.arctan2(state[3] + a*state[5], state[1]))
-    a_r = jnp.rad2deg(-jnp.arctan2(state[3] - b*state[5], state[1]))
-
-    phi_yf=(1-Ey)*(a_f+Shy)+(Ey/By)*jnp.arctan(By*(a_f+Shy))
-    phi_yr=(1-Ey)*(a_r+Shy)+(Ey/By)*jnp.arctan(By*(a_r+Shy))
-
-    F_zf=b/(a+b)*m*g
-    F_yf=F_zf*Dy*jnp.sin(Cy*jnp.arctan(By*phi_yf))+Svy
-
-    F_zr=a/(a+b)*m*g
-    F_yr=F_zr*Dy*jnp.sin(Cy*jnp.arctan(By*phi_yr))+Svy
-
-    # F_total=np.sqrt((Nw*F_x)**2+(F_yr**2))
-    # F_max=0.7*m*g
-
-    # if F_total>F_max:
-        
-    #     F_x=F_max/F_total*F_x
+def NN3(x):
+    x = np.tanh(NN_W1@x)
+    x = np.tanh(NN_W2@x)
+    x = NN_W3@x
     
-    #     F_yr=F_max/F_total*F_yr
-
-
-    dzdt = [state[1]*jnp.cos(state[4]) - state[3]*jnp.sin(state[4]), 
-            (-f*m*g+Nw*F_x-F_yf*jnp.sin(delta_f))/m+state[3]*state[5], 
-            state[2]*jnp.sin(state[4]) + state[3]*jnp.cos(state[4]), 
-            (F_yf*jnp.cos(delta_f) + F_yr) * jnp.reciprocal(m-state[1]*state[5]), 
-            state[5],
-            (F_yf*a*jnp.cos(delta_f)-F_yr*b)/Iz]
-    
-    return jnp.array(dzdt)
+    return x
 
 @jit
-def discrete_dynamics(state, u, dt = 0.001):
-    '''
-    state has shape [N_X,]
-    u has shape [N_U,]
-    '''
-    return state + dt*continuous_dynamics(state, u)
+def continuous_dynamics(state, u):
+    # state = [x, y, v, phi, beta, u]
+
+    x = state[0]
+    y = state[1]
+    v = state[2]
+    v_sqrt = np.sqrt(v)
+    phi = state[3]
+    beta = state[4]
+    steering = np.sin(u[0])
+    throttle_brake = np.sin(u[1:])*0.5 + 0.5
+
+    deriv_x = v*np.cos(phi+beta)
+    deriv_y = v*np.sin(phi+beta)
+    deriv_phi = v*np.sin(beta)/NN_LR_MEAN
+
+    x1 = np.hstack((
+                v_sqrt,
+                np.cos(beta), 
+                np.sin(beta),
+                steering,
+                throttle_brake
+            ))
+
+    x2 = np.hstack((
+                v_sqrt,
+                np.cos(beta), 
+                -np.sin(beta),
+                -steering,
+                throttle_brake
+            ))
+
+    x1 = NN3(x1)
+    x2 = NN3(x2)
+
+    deriv_v = ( x1[0]*(2*v_sqrt+x1[0]) + x2[0]*(2*v_sqrt+x2[0]) )/2 # x1[0]+x2[0]
+    deriv_beta = ( x1[1] - x2[1] )/2
+
+    derivative = np.hstack((deriv_x, deriv_y, deriv_v/DT, deriv_phi, deriv_beta/DT))
+
+    return derivative
+
+@jit
+def discrete_dynamics(state, u):
+    return state + continuous_dynamics(state, u)*DT
 
 @jit
 def rollout(x0, u_trj):
-    '''
-    state has shape [N_X,]
-    u has shape [T, N_U]
-    '''
     x_final, x_trj = jax.lax.scan(rollout_looper, x0, u_trj)
-    return jnp.vstack((x0, x_trj))
+    return np.vstack((x0, x_trj))
     
 @jit
 def rollout_looper(x_i, u_i):
     x_ip1 = discrete_dynamics(x_i, u_i)
     return x_ip1, x_ip1
 
-
+# TODO: remove length if weighing func is not needed
 @jit
 def distance_func(x, route):
-    '''
-    state has shape [N_x,]
-    route has shape [W, N_x]
-    '''
-    x, ret = jax.lax.scan(distance_func_looper, x, route)
+    x, ret = lax.scan(distance_func_looper, x, route)
     return -logsumexp(ret)
 
 @jit
@@ -127,36 +114,24 @@ def distance_func_looper(input_, p):
     return input_, -(delta_x**2.0 + delta_y**2.0)/(1.0*dp**2.0)
 
 @jit
-def cost_1step(state, action, route, goal_speed = 8.):
-    '''
-    state has shape [N_x,]
-    action has shape [N_u,]
-    route has shape [W, N_x]
-    '''
+def cost_1step(x, u, route): # x.shape:(5), u.shape(2)
     global TIME_STEPS_RATIO
-    R = jnp.diag(np.array([1., 1.]))
-    cost_weights = jnp.diag(np.array([1., 1., 1.]))
+    TIME_STEPS_RATIO =1 
+    steering = np.sin(u[0])
+    throttle = np.sin(u[1])*0.5 + 0.5
+    brake = np.sin(u[2])*0.5 + 0.5    
+    # c_position = distance_func(x, route)
+    c_speed = (x[2]-8)**2 # -x[2]**2 
+    c_control = (steering**2 + throttle**2 + brake**2 + throttle*brake)
 
-
-    speed =jnp.sqrt(jnp.square(state[1]) + jnp.square(state[3]))
-
-    c_position = distance_func(state, route)
-    c_speed = jnp.square(speed-goal_speed)
-    c_control = action.T@R@action
-
-    costs = jnp.array([c_position, c_speed, c_control])
-    
-    return jnp.asarray(costs.T@cost_weights@costs)
-
+    # return (0.04*c_position + 0.002*c_speed + 0.0005*c_control)/TIME_STEPS_RATIO
+    return (0.04*c_position + 0.002*c_speed + 0.0005*c_control)/TIME_STEPS_RATIO
 @jit
-def cost_final(state, route): 
-    '''
-    state has shape [N_x,]
-    route has shape [W, N_x]
-    '''
+def cost_final(x, route): # x.shape:(5), u.shape(2)
     global TARGET_RATIO
-    c_position = jnp.square(state[0]-route[-1,0]) + jnp.square(state[2]-route[-1,1])
-    c_speed =jnp.sqrt(jnp.square(state[1]) + jnp.square(state[3]))
+    c_position = (x[0]-route[-1,0])**2 + (x[1]-route[-1,1])**2
+#     c_position = 0
+    c_speed = x[2]**2
 
     return (c_position/(TARGET_RATIO**2) + 0.0*c_speed)*1
 
@@ -189,11 +164,6 @@ jac_l, hes_l, jac_l_final, hes_l_final, jac_f = derivative_init()
 
 @jit
 def derivative_stage(x, u, route): # x.shape:(5), u.shape(3)
-    '''
-    x has shape [N_x,]
-    u has shape [N_u,]
-    route has shape [W, N_x]
-    '''
     global jac_l, hes_l, jac_f
     l_x, l_u = jac_l(x, u, route)
     (l_xx, l_xu), (l_ux, l_uu) = hes_l(x, u, route)
@@ -222,7 +192,7 @@ def Q_terms(l_x, l_u, l_xx, l_ux, l_uu, f_x, f_u, V_x, V_xx):
 
 @jit
 def gains(Q_uu, Q_u, Q_ux):
-    Q_uu_inv = jnp.linalg.inv(Q_uu)
+    Q_uu_inv = np.linalg.inv(Q_uu)
     k = - Q_uu_inv@Q_u
     K = - Q_uu_inv@Q_ux
 
@@ -241,11 +211,11 @@ def expected_cost_reduction(Q_u, Q_uu, k):
 
 @jit
 def forward_pass(x_trj, u_trj, k_trj, K_trj):
-    u_trj = jnp.arcsin(jnp.sin(u_trj))
+    u_trj = np.arcsin(np.sin(u_trj))
     
-    x_trj_new = jnp.empty_like(x_trj)
+    x_trj_new = np.empty_like(x_trj)
     x_trj_new = jax.ops.index_update(x_trj_new, jax.ops.index[0], x_trj[0])
-    u_trj_new = jnp.empty_like(u_trj)
+    u_trj_new = np.empty_like(u_trj)
     
     x_trj, u_trj, k_trj, K_trj, x_trj_new, u_trj_new = lax.fori_loop(
         0, TIME_STEPS-1, forward_pass_looper, [x_trj, u_trj, k_trj, K_trj, x_trj_new, u_trj_new]
@@ -267,8 +237,8 @@ def forward_pass_looper(i, input_):
 
 @jit
 def backward_pass(x_trj, u_trj, regu, target):
-    k_trj = jnp.empty_like(u_trj)
-    K_trj = jnp.empty((TIME_STEPS-1, N_U, N_X))
+    k_trj = np.empty_like(u_trj)
+    K_trj = np.empty((TIME_STEPS-1, N_U, N_X))
     expected_cost_redu = 0.
     V_x, V_xx = derivative_final(x_trj[-1], target)
      
@@ -286,7 +256,7 @@ def backward_pass_looper(i, input_):
     
     l_x, l_u, l_xx, l_ux, l_uu, f_x, f_u = derivative_stage(x_trj[n], u_trj[n], target)
     Q_x, Q_u, Q_xx, Q_ux, Q_uu = Q_terms(l_x, l_u, l_xx, l_ux, l_uu, f_x, f_u, V_x, V_xx)
-    Q_uu_regu = Q_uu + jnp.eye(N_U)*regu
+    Q_uu_regu = Q_uu + np.eye(N_U)*regu
     k, K = gains(Q_uu_regu, Q_u, Q_ux)
     k_trj = jax.ops.index_update(k_trj, jax.ops.index[n], k)
     K_trj = jax.ops.index_update(K_trj, jax.ops.index[n], K)
@@ -300,11 +270,11 @@ def run_ilqr_main(x0, u_trj, target):
     global jac_l, hes_l, jac_l_final, hes_l_final, jac_f
     
     max_iter=300
-    regu = jnp.array(100.)
+    regu = np.array(100.)
     
     x_trj = rollout(x0, u_trj)
     cost_trace = jax.ops.index_update(
-        jnp.zeros((max_iter+1)), jax.ops.index[0], cost_trj(x_trj, u_trj, target)
+        np.zeros((max_iter+1)), jax.ops.index[0], cost_trj(x_trj, u_trj, target)
     )
 
     x_trj, u_trj, cost_trace, regu, target = lax.fori_loop(
@@ -364,15 +334,15 @@ def run_ilqr_false_func(input_):
 
 TIME_STEPS = 60
 
-# # NOTE: Set dp to be the same as carla
+# NOTE: Set dp to be the same as carla
 dp = 1 # same as waypoint interval
 
-# np.random.seed(1)
+onp.random.seed(1)
 
 
 TIME_STEPS_RATIO = TIME_STEPS/50
-# # TARGET_RATIO = np.linalg.norm(target[-1]-target[0])/(3*np.pi)
-TARGET_RATIO = FUTURE_WAYPOINTS_AS_STATE*dp/(6*jnp.pi) # TODO: decide if this should be determined dynamically
+# TARGET_RATIO = np.linalg.norm(target[-1]-target[0])/(3*np.pi)
+TARGET_RATIO = FUTURE_WAYPOINTS_AS_STATE*dp/(6*np.pi) # TODO: decide if this should be determined dynamically
 
 
 # carla init
@@ -386,14 +356,14 @@ for i in range(1):
         # start = time.time()
 
         state[2] += 0.01
-        state = jnp.array(state)
+        state = np.array(state)
         
-        u_trj = np.random.randn(TIME_STEPS-1, N_U)*1e-8
-        u_trj[:,2] -= jnp.pi/2.5
+        u_trj = onp.random.randn(TIME_STEPS-1, N_U)*1e-8
+        u_trj[:,2] -= np.pi/2.5
         # u_trj[:,1] -= np.pi/8
-        u_trj = jnp.array(u_trj)
+        u_trj = np.array(u_trj)
         
-        waypoints = jnp.array(waypoints)
+        waypoints = np.array(waypoints)
         
         x_trj, u_trj, cost_trace = run_ilqr_main(state, u_trj, waypoints)
 
@@ -401,13 +371,13 @@ for i in range(1):
         # if k > 1:
         #     total_time += end - start
         
-        draw_planned_trj(env.world, np.array(x_trj), env.location_[2], color=(0, 223, 222))
+        draw_planned_trj(env.world, onp.array(x_trj), env.location_[2], color=(0, 223, 222))
 
         for j in range(MPC_INTERVAL):
-            steering = jnp.sin(u_trj[j,0])
-            throttle = jnp.sin(u_trj[j,1])*0.5 + 0.5
-            brake = jnp.sin(u_trj[j,2])*0.5 + 0.5
-            state, waypoints, done, _ = env.step(np.array([steering, throttle, brake]))
+            steering = np.sin(u_trj[j,0])
+            throttle = np.sin(u_trj[j,1])*0.5 + 0.5
+            brake = np.sin(u_trj[j,2])*0.5 + 0.5
+            state, waypoints, done, _ = env.step(onp.array([steering, throttle, brake]))
 
         # tqdm.write("final estimated cost = {0:.2f} \n velocity = {1:.2f}".format(cost_trace[-1],state[2]))
         # if k > 1:
@@ -421,19 +391,4 @@ pygame.quit()
 if VIDEO_RECORD:
     os.system("ffmpeg -r 50 -f image2 -i Snaps/%05d.png -s {}x{} -aspect 16:9 -vcodec libx264 -crf 25 -y Videos/result.avi".
                 format(RES_X, RES_Y))
-
-# if __name__ == "__main__":
-#     state = jnp.array([0., 0., 0., 0., 0., 0.])
-
-#     state_trj = np.random.randn(TIME_STEPS-1, N_X)*1e-8    
-#     u_trj = np.random.randn(TIME_STEPS-1, N_U)*1e-8
-
-#     route = jnp.array([[0., 0.],
-#                         [1., 0.],
-#                         [2., 0.],
-#                         [3., 0.],
-#                         [4., 0.],
-#                         [5., 0.]])
-
-#     cost_trj(state_trj, u_trj, route)
 
