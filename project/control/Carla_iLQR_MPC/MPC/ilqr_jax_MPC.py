@@ -412,12 +412,13 @@ for i in range(1):
         #     total_time += end - start
         
         draw_planned_trj(env.world, np.array(x_trj), env.location_[2], color=(0, 223, 222))
-
         for j in range(MPC_INTERVAL):
-            steering = jnp.sin(u_trj[j,0])
-            throttle = jnp.sin(u_trj[j,1])*0.5 + 0.5
-            brake = jnp.sin(u_trj[j,2])*0.5 + 0.5
-            state, waypoints, done, _ = env.step(np.array([steering, throttle, brake]))
+            steer = u_trj[j,0]
+            thrust = u_trj[j,1]
+            # steering = jnp.sin(u_trj[j,0])
+            # throttle = jnp.sin(u_trj[j,1])*0.5 + 0.5
+            # brake = jnp.sin(u_trj[j,2])*0.5 + 0.5
+            state, waypoints, done, _ = env.step(np.array([steer, thrust]))
 
         # tqdm.write("final estimated cost = {0:.2f} \n velocity = {1:.2f}".format(cost_trace[-1],state[2]))
         # if k > 1:
