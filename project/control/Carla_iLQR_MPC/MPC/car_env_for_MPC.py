@@ -202,6 +202,9 @@ class CarEnv:
         self.map = self.world.get_map()
         self.blueprint_library = self.world.get_blueprint_library()
         self.model_3 = self.blueprint_library.filter("model3")[0]
+
+        # print(self.blueprint_library.filter("model3"))
+        self.mass = 1847 #self.world.get_actors().find("vehicle.tesla.model3").get_blueprint().get_attribute('mass').as_float()
         # self.lr = 1.538900111477258 # from system identification
         self.vehicle = None
         self.actor_list = []
@@ -221,7 +224,7 @@ class CarEnv:
 
         self.display = pygame.display.set_mode(
                 (RES_X, RES_Y),
-                pygame.HWSURFACE | pygame.DOUBLEBUF)
+                pygame.HWSURFACE | pygame.DOUBLEBUF)                                              
         self.font = get_font()
         self.clock = pygame.time.Clock()
 
@@ -245,6 +248,8 @@ class CarEnv:
 
         if new_car == True:
             self.vehicle = self.world.spawn_actor(self.model_3, self.spawn_point)
+                # self.blueprint = self.vehicle.get_blueprint()
+                # self.mass = self.blueprint.get_attribute('mass').as_float()
             self.actor_list.append(self.vehicle)
         else:
             self.vehicle.set_transform(self.spawn_point)
@@ -374,22 +379,21 @@ class CarEnv:
         return onp.array(waypoints)
 
     def step(self, action): # 0:steer; 1:throttle; 2:brake; onp array shape = (3,)
-        assert len(action) == 3
+        assert len(action) == 2
 
         if self.time >= START_TIME: # starting time
-            steer_, throttle_, brake_ = action
+            steer_, thrust_ = action
         else:
             steer_ = 0
-            throttle_ = 0.5
-            brake_ = 0
+            thrust_ = 0
 
-        assert steer_ >= -1 and steer_ <= 1 and throttle_ <= 1 and throttle_ >= 0 and  brake_ <= 1 and brake_ >= 0
-
+        assert -1 <= steer_ <= 1 and 0<= thrust_ <= 1 
         tqdm.write(
-            "steer = {0:5.2f}, throttle {1:5.2f}, brake {2:5.2f}".format(float(steer_), float(throttle_), float(brake_))
+            "steer = {0:5.2f}, thrust {1:5.2f}".format(float(steer_), float(thrust_))
         )
 
-        self.vehicle.apply_control(carla.VehicleControl(throttle=float(throttle_), steer=float(steer_), brake=float(brake_)))
+        # self.vehicle.apply_control(carla.VehicleControl(throttle=float(throttle_), steer=float(steer_), brake=float(brake_)))
+        self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(steer=float(steer_), acceleration=float(thrust_)/self.mass, speed = 8))
 
         # move a step
         for i in range(N_DT):
@@ -413,7 +417,7 @@ class CarEnv:
             v_offset = 25
             bar_h_offset = 75
             bar_width = 100
-            for key, value in {"steering":steer_, "throttle":throttle_, "brake":brake_}.items():
+            for key, value in {"steering":steer_, "throttle":thrust_}.items():
                 rect_border = pygame.Rect((bar_h_offset, v_offset + 8), (bar_width, 6))
                 pygame.draw.rect(self.display, (255, 255, 255), rect_border, 1)
                 if key == "steering":
