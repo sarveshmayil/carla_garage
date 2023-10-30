@@ -244,7 +244,9 @@ def forward_pass(x_trj, u_trj, k_trj, K_trj):
     u_trj = jnp.arcsin(jnp.sin(u_trj))
     
     x_trj_new = jnp.empty_like(x_trj)
-    x_trj_new = jax.ops.index_update(x_trj_new, jax.ops.index[0], x_trj[0])
+    #x_trj_new = jax.ops.index_update(x_trj_new, jax.ops.index[0], x_trj[0])
+    x_trj_new.at[0].set(x_trj[0])
+
     u_trj_new = jnp.empty_like(u_trj)
     
     x_trj, u_trj, k_trj, K_trj, x_trj_new, u_trj_new = lax.fori_loop(
@@ -258,10 +260,12 @@ def forward_pass_looper(i, input_):
     x_trj, u_trj, k_trj, K_trj, x_trj_new, u_trj_new = input_
     
     u_next = u_trj[i] + k_trj[i] + K_trj[i]@(x_trj_new[i] - x_trj[i])
-    u_trj_new = jax.ops.index_update(u_trj_new, jax.ops.index[i], u_next)
+    #u_trj_new = jax.ops.index_update(u_trj_new, jax.ops.index[i], u_next)
+    u_trj_new.at[i].set(u_next)
 
     x_next = discrete_dynamics(x_trj_new[i], u_trj_new[i])
-    x_trj_new = jax.ops.index_update(x_trj_new, jax.ops.index[i+1], x_next)
+    #x_trj_new = jax.ops.index_update(x_trj_new, jax.ops.index[i+1], x_next)
+    x_trj_new.at[i+1].set(x_next)
     
     return [x_trj, u_trj, k_trj, K_trj, x_trj_new, u_trj_new]
 
@@ -288,8 +292,10 @@ def backward_pass_looper(i, input_):
     Q_x, Q_u, Q_xx, Q_ux, Q_uu = Q_terms(l_x, l_u, l_xx, l_ux, l_uu, f_x, f_u, V_x, V_xx)
     Q_uu_regu = Q_uu + jnp.eye(N_U)*regu
     k, K = gains(Q_uu_regu, Q_u, Q_ux)
-    k_trj = jax.ops.index_update(k_trj, jax.ops.index[n], k)
-    K_trj = jax.ops.index_update(K_trj, jax.ops.index[n], K)
+    #k_trj = jax.ops.index_update(k_trj, jax.ops.index[n], k)
+    k_trj.at[n].set(k)
+    #K_trj = jax.ops.index_update(K_trj, jax.ops.index[n], K)
+    K_trj.at[n].set(K)
     V_x, V_xx = V_terms(Q_x, Q_u, Q_xx, Q_ux, Q_uu, K, k)
     expected_cost_redu += expected_cost_reduction(Q_u, Q_uu, k)
     
@@ -303,9 +309,11 @@ def run_ilqr_main(x0, u_trj, target):
     regu = jnp.array(100.)
     
     x_trj = rollout(x0, u_trj)
-    cost_trace = jax.ops.index_update(
-        jnp.zeros((max_iter+1)), jax.ops.index[0], cost_trj(x_trj, u_trj, target)
-    )
+    # cost_trace = jax.ops.index_update(
+    #     jnp.zeros((max_iter+1)), jax.ops.index[0], cost_trj(x_trj, u_trj, target)
+    # )
+    cost_trace = jnp.zeros((max_iter+1))
+    cost_trace.at[0].set(cost_trj(x_trj, u_trj, target))
 
     x_trj, u_trj, cost_trace, regu, target = lax.fori_loop(
         1, max_iter+1, run_ilqr_looper, [x_trj, u_trj, cost_trace, regu, target]
@@ -341,9 +349,11 @@ def run_ilqr_looper(i, input_):
 def run_ilqr_true_func(input_):
     i, cost_trace, total_cost, x_trj, u_trj, x_trj_new, u_trj_new, regu = input_
     
-    cost_trace = jax.ops.index_update(
-        cost_trace, jax.ops.index[i], total_cost 
-    )
+    # cost_trace = jax.ops.index_update(
+    #     cost_trace, jax.ops.index[i], total_cost 
+    # )
+    cost_trace.at[i].set(total_cost)
+
     x_trj = x_trj_new
     u_trj = u_trj_new
     regu *= 0.7
@@ -354,9 +364,10 @@ def run_ilqr_true_func(input_):
 def run_ilqr_false_func(input_):
     i, cost_trace, x_trj, u_trj, regu = input_
     
-    cost_trace = jax.ops.index_update(
-        cost_trace, jax.ops.index[i], cost_trace[i-1] 
-    )
+    # cost_trace = jax.ops.index_update(
+    #     cost_trace, jax.ops.index[i], cost_trace[i-1] 
+    # )
+    cost_trace.at[i].set(cost_trace[i-1])
     regu *= 2.0
     
     return [x_trj, u_trj, cost_trace, regu]
@@ -379,17 +390,16 @@ TARGET_RATIO = FUTURE_WAYPOINTS_AS_STATE*dp/(6*jnp.pi) # TODO: decide if this sh
 env = CarEnv()
 for i in range(1):
     state, waypoints = env.reset()
-
     # total_time = 0
 
     for k in tqdm(range(2000)):
         # start = time.time()
 
-        state[2] += 0.01
+        # state[2] += 0.01
         state = jnp.array(state)
         
         u_trj = np.random.randn(TIME_STEPS-1, N_U)*1e-8
-        u_trj[:,2] -= jnp.pi/2.5
+        u_trj[:,1] -= jnp.pi/2.5
         # u_trj[:,1] -= np.pi/8
         u_trj = jnp.array(u_trj)
         
@@ -419,8 +429,9 @@ for i in range(1):
 pygame.quit()
 
 if VIDEO_RECORD:
-    os.system("ffmpeg -r 50 -f image2 -i Snaps/%05d.png -s {}x{} -aspect 16:9 -vcodec libx264 -crf 25 -y Videos/result.avi".
-                format(RES_X, RES_Y))
+    pass
+    # os.system("ffmpeg -r 50 -f image2 -i Snaps/%05d.png -s {}x{} -aspect 16:9 -vcodec libx264 -crf 25 -y Videos/result.avi".
+    #             format(RES_X, RES_Y))
 
 # if __name__ == "__main__":
 #     state = jnp.array([0., 0., 0., 0., 0., 0.])

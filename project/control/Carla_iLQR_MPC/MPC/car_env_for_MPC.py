@@ -198,7 +198,7 @@ class CarEnv:
         self.client = carla.Client("localhost", 2000)
         self.client.set_timeout(2.0)
         self.world = self.client.get_world()
-        self.world = self.client.reload_world()
+        #self.world = self.client.reload_world()
         self.map = self.world.get_map()
         self.blueprint_library = self.world.get_blueprint_library()
         self.model_3 = self.blueprint_library.filter("model3")[0]
@@ -346,14 +346,23 @@ class CarEnv:
         beta = beta_candidate[min_index]
 
         # state = [self.velocity.x, self.velocity.y, self.yaw, self.angular_velocity.z]
+        # state = [
+        #             self.location.x, # x
+        #             self.location.y, # y
+        #             onp.sqrt(vx**2 + vy**2), # v
+        #             phi, # phi
+        #             beta, # beta
+        #         ]
+        ang_vel = self.vehicle.get_angular_velocity() * onp.pi / 180.0
+        # x vx y vy phi angular_velocity.z
         state = [
-                    self.location.x, # x
-                    self.location.y, # y
-                    onp.sqrt(vx**2 + vy**2), # v
-                    phi, # phi
-                    beta, # beta
-                ]
-
+            self.location.x,
+            vx,
+            self.location.y,
+            vy,
+            phi,
+            ang_vel.z
+        ]
         return onp.array(state)
 
     def get_waypoint(self,):
@@ -426,10 +435,11 @@ class CarEnv:
             pygame.display.flip()
 
             if i%2 == 0 and VIDEO_RECORD and self.time >= START_TIME:
+                pass
                 # Save every frame
-                filename = "Snaps/%05d.png" % self.file_num
-                pygame.image.save(self.display, filename)
-                self.file_num += 1
+                # filename = "Snaps/%05d.png" % self.file_num
+                # pygame.image.save(self.display, filename)
+                # self.file_num += 1
             
 
         # do we need to wait for tick (10) first?
