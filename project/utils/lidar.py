@@ -1,5 +1,5 @@
 import numpy as np
-import matplotlib.pyplot as plt
+import cv2
 
 def lidar_to_bev(pointcloud, ranges=[(0,20), (-10,10), (-2,10)], res=0.05, visualize=False):
     """
@@ -37,8 +37,8 @@ def lidar_to_bev(pointcloud, ranges=[(0,20), (-10,10), (-2,10)], res=0.05, visua
     im[y_img, x_img] = heights
 
     if visualize:
-        plt.imshow(im, cmap='gray', vmin=0, vmax=255)
-        plt.show()
+        cv2.imshow("lidar", im)
+        cv2.waitKey(1)
 
     return im
 
@@ -59,9 +59,9 @@ def lidar_to_ego_coordinates(lidar, lidar_pos=np.zeros(3), lidar_rot=np.zeros(3)
 
     # The double transpose is a trick to compute all the points together.
     ego_lidar = (rotation_matrix @ lidar[1][:, :3].T).T + lidar_pos
-    ego_lidar[:, :1] = -ego_lidar[:, :1]
+    ego_lidar[:, 1] = -ego_lidar[:, 1]
 
     if intensity:
-        ego_lidar = np.hstack((ego_lidar, lidar[1][:,-1]))
+        ego_lidar = np.hstack((ego_lidar, lidar[1][:,-1][:,None]))
 
     return ego_lidar

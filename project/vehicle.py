@@ -244,28 +244,20 @@ class Vehicle():
             # Collect data and post-process
             data_dict = self._sensor_interface.get_data()
             out_data = self.data_tick(data_dict)
-            # cv2.imshow("", data_dict['rgb_front'][1])
-            # cv2.waitKey(1)
+            cv2.imshow("camera", data_dict['rgb_front'][1])
+            cv2.waitKey(1)
             
             # Handling of lidar buffer, display
             lidar_buffer = np.vstack((lidar_buffer, out_data['lidar'][:,:3]))
             if lidar_buffer.shape[0] >= self.config.lidar['buffer_threshold']:
-                lidar_buffer = lidar_buffer / np.max(lidar_buffer, axis=0)
-                pcl.points = o3d.utility.Vector3dVector(lidar_buffer)
+                norm_lidar_buffer = lidar_buffer / np.max(abs(lidar_buffer))
+                pcl.points = o3d.utility.Vector3dVector(norm_lidar_buffer)
 
-                veh_tf = self._vehicle.get_transform()
-                veh_up_vec = veh_tf.get_up_vector()
-                up_vector = np.array([veh_up_vec.x, veh_up_vec.y, veh_up_vec.z])
-                veh_forward_vec = veh_tf.get_forward_vector()
-                forward_vector = np.array([veh_forward_vec.x, veh_forward_vec.y, veh_forward_vec.z])
-                pcl_vis_control.set_front(-up_vector)
-                pcl_vis_control.set_up(forward_vector)
-                
                 pcl_vis.update_geometry(pcl)
                 pcl_vis.poll_events()
                 pcl_vis.update_renderer()
 
-                lidar_bev = lidar_to_bev(lidar_buffer, visualize=True)
+                lidar_bev = lidar_to_bev(lidar_buffer, ranges=[(0,40), (-20,20), (-2,10)], res=0.1, visualize=True)
 
                 lidar_buffer = np.empty((0,3))
 
@@ -310,7 +302,7 @@ class Vehicle():
                 # rgb.append(rgb_pos)
                 rgb.append(image)
             elif id.startswith('lidar'):
-                lidar_points = lidar_to_ego_coordinate(data_dict[id],
+                lidar_points = lidar_to_ego_coordinates(data_dict[id],
                                                        lidar_pos=self.config.lidar['position'],
                                                        lidar_rot=self.config.lidar['rotation'],
                                                        intensity=True)
