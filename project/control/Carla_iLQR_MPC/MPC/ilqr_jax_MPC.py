@@ -48,7 +48,7 @@ def continuous_dynamics(state, action):
     Ey=-1.6
     Shy=0
     Svy=0
-    m=1400
+    m=1847
     g=9.806
 
     delta_f = action[0]
@@ -86,7 +86,7 @@ def continuous_dynamics(state, action):
     return jnp.array(dzdt)
 
 @jit
-def discrete_dynamics(state, u, dt = 0.001):
+def discrete_dynamics(state, u, dt = 0.1):
     '''
     state has shape [N_X,]
     u has shape [N_U,]
@@ -134,19 +134,21 @@ def cost_1step(state, action, route, goal_speed = 8.):
     route has shape [W, N_x]
     '''
     global TIME_STEPS_RATIO
-    R = jnp.diag(np.array([1., 1.]))
-    cost_weights = jnp.diag(np.array([1., 1., 1.]))
-
+    # R = jnp.diag(np.array([1., 1.]))
+    # cost_weights = jnp.diag(np.array([1., 1., 1.]))
 
     speed =jnp.sqrt(jnp.square(state[1]) + jnp.square(state[3]))
 
     c_position = distance_func(state, route)
     c_speed = jnp.square(speed-goal_speed)
-    c_control = action.T@R@action
+    # c_control = action.T@R@action
 
-    costs = jnp.array([c_position, c_speed, c_control])
+    # costs = jnp.array([c_position, c_speed, c_control])
     
-    return jnp.asarray(costs.T@cost_weights@costs)
+    # return jnp.asarray(costs.T@cost_weights@costs)
+    c_control = action[0]/0.5 + action[1]/500
+
+    return (8.0*c_position + 2.0*c_speed + 0.05*c_control)/TIME_STEPS_RATIO
 
 @jit
 def cost_final(state, route): 
@@ -398,15 +400,18 @@ for i in range(1):
         # state[2] += 0.01
         state = jnp.array(state)
         
-        u_trj = np.random.randn(TIME_STEPS-1, N_U)*1e-8
-        u_trj[:,1] -= jnp.pi/2.5
+        # u_trj = np.random.randn(TIME_STEPS-1, N_U)
+        steer_sample = np.random.randn(TIME_STEPS-1, 1) * 0.7
+        thrust_sample = np.random.randn(TIME_STEPS-1, 1) * 2500 + 4000
+        u_trj = np.hstack((steer_sample, thrust_sample))
+
+
+        # u_trj[:,1] -= jnp.pi/2.5
         # u_trj[:,1] -= np.pi/8
         u_trj = jnp.array(u_trj)
-        
         waypoints = jnp.array(waypoints)
         
         x_trj, u_trj, cost_trace = run_ilqr_main(state, u_trj, waypoints)
-
         # end = time.time()
         # if k > 1:
         #     total_time += end - start
@@ -415,6 +420,8 @@ for i in range(1):
         for j in range(MPC_INTERVAL):
             steer = u_trj[j,0]
             thrust = u_trj[j,1]
+
+            # thrust = np.clip(thrust, -5000, 5000)
             # steering = jnp.sin(u_trj[j,0])
             # throttle = jnp.sin(u_trj[j,1])*0.5 + 0.5
             # brake = jnp.sin(u_trj[j,2])*0.5 + 0.5

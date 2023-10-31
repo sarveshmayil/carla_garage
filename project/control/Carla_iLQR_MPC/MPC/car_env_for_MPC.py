@@ -205,6 +205,7 @@ class CarEnv:
 
         # print(self.blueprint_library.filter("model3"))
         self.mass = 1847 #self.world.get_actors().find("vehicle.tesla.model3").get_blueprint().get_attribute('mass').as_float()
+        self.Force = carla.Vector3D(0,0,0)
         # self.lr = 1.538900111477258 # from system identification
         self.vehicle = None
         self.actor_list = []
@@ -387,13 +388,19 @@ class CarEnv:
             steer_ = 0
             thrust_ = 0
 
-        assert -1 <= steer_ <= 1 and 0<= thrust_ <= 1 
+        # assert -1 <= steer_ <= 1 and -5000<= thrust_ <= 5000 
         tqdm.write(
-            "steer = {0:5.2f}, thrust {1:5.2f}".format(float(steer_), float(thrust_))
+            "time: {0:1.2f}, steer = {1:5.2f}, thrust {2:5.2f}".format(float(self.time), float(steer_), float(thrust_))
         )
 
         # self.vehicle.apply_control(carla.VehicleControl(throttle=float(throttle_), steer=float(steer_), brake=float(brake_)))
         self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(steer=float(steer_), acceleration=float(thrust_)/self.mass, speed = 8))
+        # self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(steer=float(steer_), acceleration=9000, speed = 8))
+        # self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(steer=float(steer_)))
+        # self.vehicle.add_force(-1*self.Force)
+        _,_,_,_,phi,_ = self.get_state()
+        self.Force = carla.Vector3D(thrust_*onp.cos(phi), thrust_*onp.sin(phi), 0)
+        self.vehicle.add_force(self.Force)
 
         # move a step
         for i in range(N_DT):
