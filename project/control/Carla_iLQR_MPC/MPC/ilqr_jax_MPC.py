@@ -23,14 +23,26 @@ from car_env_for_MPC import *
 
 import os
 
-DT = 0.1# [s] delta time step, = 1/FPS_in_server
+# DT = 0.1# [s] delta time step, = 1/FPS_in_server
 N_X = 6
 N_U = 2
-TIME_STEPS = 50
+# TIME_STEPS = 50
 # MODEL_NAME = "bicycle_model_100000_v2_jax"
 # MODEL_NAME = "bicycle_model_100ms_20000_v4_jax"
 # model_path="../SystemID/model/net_{}.model".format(MODEL_NAME)
 # NN_W1, NN_W2, NN_W3, NN_LR_MEAN = pickle.load(open(model_path, mode="rb"))
+TIME_STEPS = 60
+
+# # NOTE: Set dp to be the same as carla
+dp = 1 # same as waypoint interval
+
+# np.random.seed(1)
+
+
+TIME_STEPS_RATIO = TIME_STEPS/50
+# # TARGET_RATIO = np.linalg.norm(target[-1]-target[0])/(3*np.pi)
+TARGET_RATIO = FUTURE_WAYPOINTS_AS_STATE*dp/(6*jnp.pi) # TODO: decide if this should be determined dynamically
+
 
 
 @jit
@@ -86,7 +98,7 @@ def continuous_dynamics(state, action):
     return jnp.array(dzdt)
 
 @jit
-def discrete_dynamics(state, u, dt = 0.1):
+def discrete_dynamics(state, u, dt = DT_):
     '''
     state has shape [N_X,]
     u has shape [N_U,]
@@ -148,7 +160,7 @@ def cost_1step(state, action, route, goal_speed = 8.):
     # return jnp.asarray(costs.T@cost_weights@costs)
     c_control = action[0]/0.5 + action[1]/500
 
-    return (8.0*c_position + 2.0*c_speed + 0.05*c_control)/TIME_STEPS_RATIO
+    return (0.04*c_position + 0.002*c_speed + 0.0*c_control)/TIME_STEPS_RATIO
 
 @jit
 def cost_final(state, route): 
@@ -243,7 +255,8 @@ def expected_cost_reduction(Q_u, Q_uu, k):
 
 @jit
 def forward_pass(x_trj, u_trj, k_trj, K_trj):
-    u_trj = jnp.arcsin(jnp.sin(u_trj))
+    global TIME_STEPS
+    # u_trj = jnp.arcsin(jnp.sin(u_trj))
     
     x_trj_new = jnp.empty_like(x_trj)
     #x_trj_new = jax.ops.index_update(x_trj_new, jax.ops.index[0], x_trj[0])
@@ -373,19 +386,6 @@ def run_ilqr_false_func(input_):
     regu *= 2.0
     
     return [x_trj, u_trj, cost_trace, regu]
-
-
-TIME_STEPS = 60
-
-# # NOTE: Set dp to be the same as carla
-dp = 1 # same as waypoint interval
-
-# np.random.seed(1)
-
-
-TIME_STEPS_RATIO = TIME_STEPS/50
-# # TARGET_RATIO = np.linalg.norm(target[-1]-target[0])/(3*np.pi)
-TARGET_RATIO = FUTURE_WAYPOINTS_AS_STATE*dp/(6*jnp.pi) # TODO: decide if this should be determined dynamically
 
 
 # carla init

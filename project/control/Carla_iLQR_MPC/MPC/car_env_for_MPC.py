@@ -67,13 +67,13 @@ FUTURE_WAYPOINTS_AS_STATE = 50
 
 SHOW_CAM = True 
 
-START_TIME = 3
+START_TIME = 1
 
 DEBUG = True
 
 MPC_INTERVAL = 1
 
-VIDEO_RECORD = True
+VIDEO_RECORD = False
 RES_X = 1920
 RES_Y = 1080
 
@@ -210,6 +210,10 @@ class CarEnv:
         self.vehicle = None
         self.actor_list = []
 
+
+        self.ackControl = carla.AckermannControllerSettings(speed_kp=0.15, speed_ki=0.0, speed_kd=0.25, 
+                                                            accel_kp=0.011, accel_ki=0.009, accel_kd=0.001)
+
         # world in sync mode
         self.world.apply_settings(carla.WorldSettings(
             no_rendering_mode=NO_RENDERING, # False for debug
@@ -249,6 +253,7 @@ class CarEnv:
 
         if new_car == True:
             self.vehicle = self.world.spawn_actor(self.model_3, self.spawn_point)
+            self.vehicle.apply_ackermann_controller_settings(self.ackControl)
                 # self.blueprint = self.vehicle.get_blueprint()
                 # self.mass = self.blueprint.get_attribute('mass').as_float()
             self.actor_list.append(self.vehicle)
@@ -387,21 +392,26 @@ class CarEnv:
         else:
             steer_ = 0
             thrust_ = 0
+        accel = float(thrust_)/self.mass
 
         # assert -1 <= steer_ <= 1 and -5000<= thrust_ <= 5000 
         tqdm.write(
-            "time: {0:1.2f}, steer = {1:5.2f}, thrust {2:5.2f}".format(float(self.time), float(steer_), float(thrust_))
+            "time: {0:1.2f}, steer: {1:5.2f}, thrust: {2:5.2f}, accel: {3:5.2f}".format(float(self.time), float(steer_), float(thrust_), self.vehicle.get_acceleration().length())
         )
 
         # self.vehicle.apply_control(carla.VehicleControl(throttle=float(throttle_), steer=float(steer_), brake=float(brake_)))
         self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(steer=float(steer_), acceleration=float(thrust_)/self.mass, speed = 8))
-        # self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(steer=float(steer_), acceleration=9000, speed = 8))
         # self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(steer=float(steer_)))
-        # self.vehicle.add_force(-1*self.Force)
-        _,_,_,_,phi,_ = self.get_state()
-        self.Force = carla.Vector3D(thrust_*onp.cos(phi), thrust_*onp.sin(phi), 0)
-        self.vehicle.add_force(self.Force)
+        # self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(acceleration=100, speed = 8))
 
+        # self.vehicle.add_force(-1*self.Force)
+        # _,_,_,_,phi,_ = self.get_state()
+        # scale = 10
+        # self.Force = carla.Vector3D(scale*thrust_*onp.cos(phi), scale*thrust_*onp.sin(phi), 0)
+        # # force = 50000
+        # # self.Force = carla.Vector3D(force*onp.cos(phi),force*onp.sin(phi), 0)
+        # self.vehicle.add_force(self.Force)
+        # self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(acceleration=5, speed = 10000))
         # move a step
         for i in range(N_DT):
             self.clock.tick()
@@ -424,7 +434,7 @@ class CarEnv:
             v_offset = 25
             bar_h_offset = 75
             bar_width = 100
-            for key, value in {"steering":steer_, "throttle":thrust_}.items():
+            for key, value in {"steering":steer_, "throttle":thrust_/5000}.items():
                 rect_border = pygame.Rect((bar_h_offset, v_offset + 8), (bar_width, 6))
                 pygame.draw.rect(self.display, (255, 255, 255), rect_border, 1)
                 if key == "steering":
