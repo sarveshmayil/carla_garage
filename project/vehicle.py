@@ -11,7 +11,7 @@ from control.controller_base import BaseController
 from control.pid_vehicle_control import PIDController
 from utils.misc import draw_waypoints
 from utils.lidar import *
-from leaderboard.leaderboard.envs.sensor_interface import CallBack, SensorInterface
+from leaderboard.envs.sensor_interface import CallBack, SensorInterface
 
 from typing import Tuple, Union, Optional, Dict
 
@@ -62,7 +62,7 @@ class Vehicle():
         self,
         location:Union[Tuple[float], carla.Location],
         rotation:Union[Tuple[float], carla.Rotation]=(0.0, 0.0, 0.0),
-        vehicle_idx=0
+        vehicle_name="vehicle.tesla.model3"
     ):
         """
         Spawns vehicle at specified location and rotation.
@@ -83,7 +83,7 @@ class Vehicle():
         spawnPoint = carla.Transform(location, rotation)
 
         blueprint_library = self._world.get_blueprint_library()
-        blueprint:carla.ActorBlueprint = blueprint_library.filter('vehicle.*')[vehicle_idx]
+        blueprint:carla.ActorBlueprint = blueprint_library.find(vehicle_name)
         self._vehicle = self._world.spawn_actor(blueprint, spawnPoint)
 
         self.setup_sensors()
@@ -200,35 +200,36 @@ class Vehicle():
         i = 0
         target_wp = self.route[0]
 
-        # PointCloud visualization
-        pcl_vis = o3d.visualization.Visualizer()
-        #pcl_vis.get_render_option().point_size = 1
-        # pcl_vis.get_render_option().show_coordinate_frame = True
-        pcl_vis_control = o3d.visualization.ViewControl()
-        pcl_vis.create_window(height=480, width=640)
-        pcl = o3d.geometry.PointCloud()
-        pcl.points = o3d.utility.Vector3dVector(np.random.rand(10,3))
-        pcl_vis.add_geometry(pcl)
+        # # PointCloud visualization
+        # pcl_vis = o3d.visualization.Visualizer()
+        # #pcl_vis.get_render_option().point_size = 1
+        # # pcl_vis.get_render_option().show_coordinate_frame = True
+        # pcl_vis_control = o3d.visualization.ViewControl()
+        # pcl_vis.create_window(height=480, width=640)
+        # pcl = o3d.geometry.PointCloud()
+        # pcl.points = o3d.utility.Vector3dVector(np.random.rand(10,3))
+        # pcl_vis.add_geometry(pcl)
 
-        # Visualize xyz axes
-        axis = o3d.geometry.LineSet()
-        axis.points = o3d.utility.Vector3dVector(np.array([
-            [0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0]]))
-        axis.lines = o3d.utility.Vector2iVector(np.array([
-            [0, 1],
-            [0, 2],
-            [0, 3]]))
-        axis.colors = o3d.utility.Vector3dVector(np.array([
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0]]))
-        pcl_vis.add_geometry(axis)
+        # # Visualize xyz axes
+        # axis = o3d.geometry.LineSet()
+        # axis.points = o3d.utility.Vector3dVector(np.array([
+        #     [0.0, 0.0, 0.0],
+        #     [1.0, 0.0, 0.0],
+        #     [0.0, 1.0, 0.0],
+        #     [0.0, 0.0, 1.0]]))
+        # axis.lines = o3d.utility.Vector2iVector(np.array([
+        #     [0, 1],
+        #     [0, 2],
+        #     [0, 3]]))
+        # axis.colors = o3d.utility.Vector3dVector(np.array([
+        #     [1.0, 0.0, 0.0],
+        #     [0.0, 1.0, 0.0],
+        #     [0.0, 0.0, 1.0]]))
+        # pcl_vis.add_geometry(axis)
 
         lidar_buffer = np.empty((0,3))
         while True:
+            self._world.tick()
             # Offset spectator camera to follow car
             spectator_offset = -5 * self._vehicle.get_transform().rotation.get_forward_vector() + \
                                 2 * self._vehicle.get_transform().rotation.get_up_vector()
@@ -250,15 +251,14 @@ class Vehicle():
             # Handling of lidar buffer, display
             lidar_buffer = np.vstack((lidar_buffer, out_data['lidar'][:,:3]))
             if lidar_buffer.shape[0] >= self.config.lidar['buffer_threshold']:
-                norm_lidar_buffer = lidar_buffer / np.max(abs(lidar_buffer))
-                pcl.points = o3d.utility.Vector3dVector(norm_lidar_buffer)
+                # norm_lidar_buffer = lidar_buffer / np.max(abs(lidar_buffer))
+                # pcl.points = o3d.utility.Vector3dVector(norm_lidar_buffer)
 
-                pcl_vis.update_geometry(pcl)
-                pcl_vis.poll_events()
-                pcl_vis.update_renderer()
+                # pcl_vis.update_geometry(pcl)
+                # pcl_vis.poll_events()
+                # pcl_vis.update_renderer()
 
                 lidar_bev = lidar_to_bev(lidar_buffer, ranges=[(0,40), (-20,20), (-2,10)], res=0.1, visualize=True)
-
                 lidar_buffer = np.empty((0,3))
 
             # If vehicle has reached waypoint, move to next waypoint
