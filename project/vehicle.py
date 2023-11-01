@@ -87,6 +87,7 @@ class Vehicle():
         self._vehicle = self._world.spawn_actor(blueprint, spawnPoint)
 
         self.setup_sensors()
+        self._world.tick()
 
     def get_sensor_config(self):
         sensors = []
@@ -163,7 +164,7 @@ class Vehicle():
             }
         self._controller = PIDController(self._vehicle, lateral_args=args_lateral_dict, longitudinal_args=args_long_dict)
 
-    def set_route(self, start:carla.Location, target:carla.Location):
+    def set_route(self, target:carla.Location, start:Optional[carla.Location]=None):
         """
         Function to set a route for the vehicle to follow.
         
@@ -175,6 +176,8 @@ class Vehicle():
         Returns:
             None
         """
+        if start is None:
+            start = self.location
         self.route = [wp[0] for wp in self._planner.trace_route(start, target)]
 
     def follow_route(self, target_speed=30.0, threshold=3.5, visualize=False):
@@ -328,6 +331,3 @@ class Vehicle():
                 self._sensors[id].destroy()
                 self._sensors[id] = None
         self._sensors = {}
-
-            
-
