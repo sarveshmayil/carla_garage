@@ -11,7 +11,7 @@ from control.controller_base import BaseController
 from control.pid_vehicle_control import PIDController
 from utils.misc import draw_waypoints
 from utils.lidar import *
-from leaderboard.envs.sensor_interface import CallBack, SensorInterface
+from leaderboard.leaderboard.envs.sensor_interface import CallBack, SensorInterface
 
 from typing import Tuple, Union, Optional, Dict
 
@@ -163,7 +163,7 @@ class Vehicle():
             }
         self._controller = PIDController(self._vehicle, lateral_args=args_lateral_dict, longitudinal_args=args_long_dict)
 
-    def set_route(self, target:carla.Location):
+    def set_route(self, start:carla.Location, target:carla.Location):
         """
         Function to set a route for the vehicle to follow.
         
@@ -175,7 +175,7 @@ class Vehicle():
         Returns:
             None
         """
-        self.route = [wp[0] for wp in self._planner.trace_route(self.location, target)]
+        self.route = [wp[0] for wp in self._planner.trace_route(start, target)]
 
     def follow_route(self, target_speed=30.0, threshold=3.5, visualize=False):
         """

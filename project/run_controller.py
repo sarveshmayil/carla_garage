@@ -50,5 +50,5 @@ if __name__ == "__main__":
     vehicle.spawn(location=a)
     vehicle.controller = pid_controller(vehicle._vehicle)
     vehicle.planner = GlobalRoutePlanner(wmap, sampling_resolution=2)
-    vehicle.set_route(target=b)
+    vehicle.set_route(start=a, target=b)
     vehicle.follow_route(target_speed=30, visualize=True)
