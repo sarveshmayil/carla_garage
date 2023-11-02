@@ -385,22 +385,31 @@ class CarEnv:
         return onp.array(waypoints)
 
     def step(self, action): # 0:steer; 1:throttle; 2:brake; onp array shape = (3,)
-        assert len(action) == 2
+        assert len(action) == 3
 
         if self.time >= START_TIME: # starting time
-            steer_, thrust_ = action
+            steer_, throttle_, brake_ = action
         else:
             steer_ = 0
-            thrust_ = 0
-        accel = float(thrust_)/self.mass
+            throttle_ = 0
+            brake_ = 0
+        # accel = float(thrust_)/self.mass
 
         # assert -1 <= steer_ <= 1 and -5000<= thrust_ <= 5000 
         tqdm.write(
-            "time: {0:1.2f}, steer: {1:5.2f}, thrust: {2:5.2f}, accel: {3:5.2f}".format(float(self.time), float(steer_), float(thrust_), self.vehicle.get_acceleration().length())
+            "time: {0:1.2f}, steer: {1:5.2f}, throttle: {2:5.2f}, accel: {3:5.2f}".format(float(self.time), float(steer_), float(throttle_), self.vehicle.get_acceleration().length())
         )
 
-        # self.vehicle.apply_control(carla.VehicleControl(throttle=float(throttle_), steer=float(steer_), brake=float(brake_)))
-        self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(steer=float(steer_), acceleration=float(thrust_)/self.mass, speed = 8))
+        # phys = self.vehicle.get_physics_control()
+        # wheels = phys.wheels
+        # print(f'mass: {phys.mass}, moi: {phys.moi}')
+        # print(wheel_phys)
+        # for wheel_phys in wheels:
+        #     print(f'friction coeff: {wheel_phys.tire_friction}, long_stiff: {wheel_phys.long_stiff_value}, lat_stiff: {wheel_phys.lat_stiff_value}, lat_stiff_max_load: {wheel_phys.lat_stiff_max_load}')
+            # pos = wheel_phys.position
+            # print(f'x:{pos.x:0.3f}, y:{pos.y:0.3f}, z:{pos.z:0.3f}')
+        self.vehicle.apply_control(carla.VehicleControl(throttle=float(throttle_), steer=float(steer_), brake=float(brake_)))
+        # self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(steer=float(steer_), acceleration=float(thrust_)/self.mass, speed = 8))
         # self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(steer=float(steer_)))
         # self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(acceleration=100, speed = 8))
 
@@ -434,7 +443,7 @@ class CarEnv:
             v_offset = 25
             bar_h_offset = 75
             bar_width = 100
-            for key, value in {"steering":steer_, "throttle":thrust_/5000}.items():
+            for key, value in {"steering":steer_, "throttle":throttle_}.items():
                 rect_border = pygame.Rect((bar_h_offset, v_offset + 8), (bar_width, 6))
                 pygame.draw.rect(self.display, (255, 255, 255), rect_border, 1)
                 if key == "steering":
