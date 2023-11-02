@@ -11,6 +11,7 @@ from control.controller_base import BaseController
 from control.pid_vehicle_control import PIDController
 from utils.misc import draw_waypoints
 from utils.lidar import *
+from model import *
 from leaderboard.leaderboard.envs.sensor_interface import CallBack, SensorInterface
 
 from typing import Tuple, Union, Optional, Dict
@@ -30,10 +31,12 @@ class Vehicle():
         self.device = device
         self.route = []
 
+        self.config = Config()
+
         self._sensor_interface = SensorInterface()
         self._sensors = {}
 
-        self.config = Config()
+        self._model = LidarCenterNet()
 
     @property
     def location(self) -> carla.Location:
@@ -260,6 +263,8 @@ class Vehicle():
 
                 lidar_bev = lidar_to_bev(lidar_buffer, ranges=[(0,40), (-20,20), (-2,10)], res=0.1, visualize=True)
                 lidar_buffer = np.empty((0,3))
+
+                self._model(out_data['rgb'].permute(0,3,1,2), lidar_bev[None,:].to("cuda"), target_point=torch.tensor([300,0,0]))
 
             # If vehicle has reached waypoint, move to next waypoint
             if(veh_dist < threshold):
