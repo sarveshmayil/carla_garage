@@ -2,7 +2,6 @@ from jax import jit, jacfwd, jacrev, hessian, lax
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 import jax
-
 jnp.set_printoptions(precision=3)
 
 # from jax.config import config
@@ -23,6 +22,10 @@ from car_env_for_MPC import *
 
 import os
 
+
+from jax.config import config
+# config.update("jax_debug_nans", True)
+jax.config.update("jax_enable_x64", True)
 # DT = 0.1# [s] delta time step, = 1/FPS_in_server
 N_X = 6
 N_U = 2
@@ -31,7 +34,7 @@ N_U = 2
 # MODEL_NAME = "bicycle_model_100ms_20000_v4_jax"
 # model_path="../SystemID/model/net_{}.model".format(MODEL_NAME)
 # NN_W1, NN_W2, NN_W3, NN_LR_MEAN = pickle.load(open(model_path, mode="rb"))
-TIME_STEPS = 60
+TIME_STEPS = 80
 
 # # NOTE: Set dp to be the same as carla
 dp = 1 # same as waypoint interval
@@ -49,18 +52,27 @@ TARGET_RATIO = FUTURE_WAYPOINTS_AS_STATE*dp/(6*jnp.pi) # TODO: decide if this sh
 def continuous_dynamics(state, action):
     #state = [X, u, Y, v, PSI, r]
     #action = [delta_f, F_x]
-    Nw=2
-    f=0.01
-    Iz=2667
+
+    #Carla Wheel Physics
+    # friction coeff: 3.5, long_stiff: 3000.0, lat_stiff: 20.0, lat_stiff_max_load: 3.0
+    # wheelbase: 3, track width: 1.67
+    Nw=2 #Number wheels
+    f=3.5 #friction
     a=1.35
     b=1.45
-    By=0.27
+    # By=0.27
+    By = 20.0
     Cy=1.2
-    Dy=0.7
+    # Dy=0.7
+    Dy = 3
     Ey=-1.6
     Shy=0
     Svy=0
-    m=1847
+    m=1845
+    # Iz = 2667
+    L = 3 #Wheelbase
+    Iz=0.5*m*(L/2)**2
+
     g=9.806
 
     delta_f = action[0]
@@ -80,17 +92,14 @@ def continuous_dynamics(state, action):
 
     # F_total=np.sqrt((Nw*F_x)**2+(F_yr**2))
     # F_max=0.7*m*g
-
     # if F_total>F_max:
-        
     #     F_x=F_max/F_total*F_x
-    
     #     F_yr=F_max/F_total*F_yr
 
 
     dzdt = [state[1]*jnp.cos(state[4]) - state[3]*jnp.sin(state[4]), 
             (-f*m*g+Nw*F_x-F_yf*jnp.sin(delta_f))/m+state[3]*state[5], 
-            state[2]*jnp.sin(state[4]) + state[3]*jnp.cos(state[4]), 
+            state[1]*jnp.sin(state[4]) + state[3]*jnp.cos(state[4]), 
             (F_yf*jnp.cos(delta_f) + F_yr) * jnp.reciprocal(m-state[1]*state[5]), 
             state[5],
             (F_yf*a*jnp.cos(delta_f)-F_yr*b)/Iz]
@@ -134,7 +143,7 @@ def distance_func_looper(input_, p):
     global dp
     
     delta_x = input_[0]-p[0]
-    delta_y = input_[1]-p[1]
+    delta_y = input_[2]-p[1]
 
     return input_, -(delta_x**2.0 + delta_y**2.0)/(1.0*dp**2.0)
 
@@ -153,14 +162,15 @@ def cost_1step(state, action, route, goal_speed = 8.):
 
     c_position = distance_func(state, route)
     c_speed = jnp.square(speed-goal_speed)
-    # c_control = action.T@R@action
+    # c_control = jnp.square(action[0]/0.7)
+    # c_control = jnp.square(action[1]/5000)
+    c_control = jnp.sqrt(jnp.square(action[0]/0.7) + jnp.square(action[1]/5000))
 
-    # costs = jnp.array([c_position, c_speed, c_control])
-    
-    # return jnp.asarray(costs.T@cost_weights@costs)
-    c_control = action[0]/0.5 + action[1]/500
-
-    return (0.04*c_position + 0.002*c_speed + 0.0*c_control)/TIME_STEPS_RATIO
+    # c_control = action[0]/0.5 + action[1]/500
+    # return (0.*c_position + 0.0005*c_speed + 0.*c_control)/TIME_STEPS_RATIO #~2.3
+    # return (.001*c_position + 0.*c_speed + 0.*c_control)/TIME_STEPS_RATIO #~1.29
+    # return (0.*c_position + 0.*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~1.7
+    return (0.003*c_position + 0.00025*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~7 on init
 
 @jit
 def cost_final(state, route): 
@@ -172,7 +182,7 @@ def cost_final(state, route):
     c_position = jnp.square(state[0]-route[-1,0]) + jnp.square(state[2]-route[-1,1])
     c_speed =jnp.sqrt(jnp.square(state[1]) + jnp.square(state[3]))
 
-    return (c_position/(TARGET_RATIO**2) + 0.0*c_speed)*1
+    return (0.*c_position/(TARGET_RATIO**2) + 0.0*c_speed)*1
 
 @jit
 def cost_trj(x_trj, u_trj, route):
@@ -189,6 +199,11 @@ def cost_trj_looper(i, input_):
     total += cost_1step(x_trj[i], u_trj[i], route)
     
     return [total, x_trj, u_trj, route]
+
+
+def wrapper_function(x_trj_u_trj):
+    x_trj, u_trj, target = x_trj_u_trj # here we are unpacking the tuple back into three variables
+    return cost_trj(x_trj, u_trj, target)
 
 def derivative_init():
     jac_l = jit(jacfwd(cost_1step, argnums=[0,1]))
@@ -260,7 +275,7 @@ def forward_pass(x_trj, u_trj, k_trj, K_trj):
     
     x_trj_new = jnp.empty_like(x_trj)
     #x_trj_new = jax.ops.index_update(x_trj_new, jax.ops.index[0], x_trj[0])
-    x_trj_new.at[0].set(x_trj[0])
+    x_traj_new = x_trj_new.at[0].set(x_trj[0])
 
     u_trj_new = jnp.empty_like(u_trj)
     
@@ -276,117 +291,215 @@ def forward_pass_looper(i, input_):
     
     u_next = u_trj[i] + k_trj[i] + K_trj[i]@(x_trj_new[i] - x_trj[i])
     #u_trj_new = jax.ops.index_update(u_trj_new, jax.ops.index[i], u_next)
-    u_trj_new.at[i].set(u_next)
+    u_trj_new= u_trj_new.at[i].set(u_next)
 
     x_next = discrete_dynamics(x_trj_new[i], u_trj_new[i])
     #x_trj_new = jax.ops.index_update(x_trj_new, jax.ops.index[i+1], x_next)
-    x_trj_new.at[i+1].set(x_next)
+    x_trj_new= x_trj_new.at[i+1].set(x_next)
     
     return [x_trj, u_trj, k_trj, K_trj, x_trj_new, u_trj_new]
 
+# @jit
+# def backward_pass(x_trj, u_trj, regu, target):
+#     k_trj = jnp.empty_like(u_trj)
+#     K_trj = jnp.empty((TIME_STEPS-1, N_U, N_X))
+#     expected_cost_redu = 0.
+#     V_x, V_xx = derivative_final(x_trj[-1], target)
+     
+#     V_x, V_xx, k_trj, K_trj, x_trj, u_trj, expected_cost_redu, regu, target = lax.fori_loop(
+#         0, TIME_STEPS-1, backward_pass_looper, [V_x, V_xx, k_trj, K_trj, x_trj, u_trj, expected_cost_redu, regu, target]
+#     )
+        
+#     return k_trj, K_trj, expected_cost_redu
+
 @jit
-def backward_pass(x_trj, u_trj, regu, target):
+def backward_pass(x_trj, u_trj, target):
     k_trj = jnp.empty_like(u_trj)
     K_trj = jnp.empty((TIME_STEPS-1, N_U, N_X))
     expected_cost_redu = 0.
     V_x, V_xx = derivative_final(x_trj[-1], target)
      
-    V_x, V_xx, k_trj, K_trj, x_trj, u_trj, expected_cost_redu, regu, target = lax.fori_loop(
-        0, TIME_STEPS-1, backward_pass_looper, [V_x, V_xx, k_trj, K_trj, x_trj, u_trj, expected_cost_redu, regu, target]
+    V_x, V_xx, k_trj, K_trj, x_trj, u_trj, expected_cost_redu, target = lax.fori_loop(
+        0, TIME_STEPS-1, backward_pass_looper, [V_x, V_xx, k_trj, K_trj, x_trj, u_trj, expected_cost_redu, target]
     )
         
     return k_trj, K_trj, expected_cost_redu
 
+# @jit
+# def backward_pass_looper(i, input_):
+#     V_x, V_xx, k_trj, K_trj, x_trj, u_trj, expected_cost_redu, regu, target = input_
+#     n = TIME_STEPS-2-i
+    
+#     l_x, l_u, l_xx, l_ux, l_uu, f_x, f_u = derivative_stage(x_trj[n], u_trj[n], target)
+#     Q_x, Q_u, Q_xx, Q_ux, Q_uu = Q_terms(l_x, l_u, l_xx, l_ux, l_uu, f_x, f_u, V_x, V_xx)
+#     Q_uu_regu = Q_uu + jnp.eye(N_U)*regu
+#     k, K = gains(Q_uu_regu, Q_u, Q_ux)
+#     #k_trj = jax.ops.index_update(k_trj, jax.ops.index[n], k)
+#     k_trj.at[n].set(k)
+#     #K_trj = jax.ops.index_update(K_trj, jax.ops.index[n], K)
+#     K_trj.at[n].set(K)
+#     V_x, V_xx = V_terms(Q_x, Q_u, Q_xx, Q_ux, Q_uu, K, k)
+#     expected_cost_redu += expected_cost_reduction(Q_u, Q_uu, k)
+    
+#     return [V_x, V_xx, k_trj, K_trj, x_trj, u_trj, expected_cost_redu, regu, target]
 
 @jit
 def backward_pass_looper(i, input_):
-    V_x, V_xx, k_trj, K_trj, x_trj, u_trj, expected_cost_redu, regu, target = input_
+    V_x, V_xx, k_trj, K_trj, x_trj, u_trj, expected_cost_redu, target = input_
     n = TIME_STEPS-2-i
     
     l_x, l_u, l_xx, l_ux, l_uu, f_x, f_u = derivative_stage(x_trj[n], u_trj[n], target)
     Q_x, Q_u, Q_xx, Q_ux, Q_uu = Q_terms(l_x, l_u, l_xx, l_ux, l_uu, f_x, f_u, V_x, V_xx)
-    Q_uu_regu = Q_uu + jnp.eye(N_U)*regu
-    k, K = gains(Q_uu_regu, Q_u, Q_ux)
+    # Q_uu_regu = Q_uu + jnp.eye(N_U)*regu
+    k, K = gains(Q_uu, Q_u, Q_ux)
+
     #k_trj = jax.ops.index_update(k_trj, jax.ops.index[n], k)
-    k_trj.at[n].set(k)
+    k_trj =k_trj.at[n].set(k)
     #K_trj = jax.ops.index_update(K_trj, jax.ops.index[n], K)
-    K_trj.at[n].set(K)
+    K_trj= K_trj.at[n].set(K)
     V_x, V_xx = V_terms(Q_x, Q_u, Q_xx, Q_ux, Q_uu, K, k)
     expected_cost_redu += expected_cost_reduction(Q_u, Q_uu, k)
     
-    return [V_x, V_xx, k_trj, K_trj, x_trj, u_trj, expected_cost_redu, regu, target]
+    return [V_x, V_xx, k_trj, K_trj, x_trj, u_trj, expected_cost_redu, target]
+
+# @jit
+# def run_ilqr_main(x0, u_trj, target):
+#     global jac_l, hes_l, jac_l_final, hes_l_final, jac_f
+    
+#     max_iter=300
+#     regu = jnp.array(100.)
+    
+#     x_trj = rollout(x0, u_trj)
+#     # cost_trace = jax.ops.index_update(
+#     #     jnp.zeros((max_iter+1)), jax.ops.index[0], cost_trj(x_trj, u_trj, target)
+#     # )
+#     cost_trace = jnp.zeros((max_iter+1))
+#     cost_trace.at[0].set(cost_trj(x_trj, u_trj, target))
+
+#     x_trj, u_trj, cost_trace, regu, target = lax.fori_loop(
+#         1, max_iter+1, run_ilqr_looper, [x_trj, u_trj, cost_trace, regu, target]
+#     )
+    
+#     return x_trj, u_trj, cost_trace
 
 @jit
 def run_ilqr_main(x0, u_trj, target):
     global jac_l, hes_l, jac_l_final, hes_l_final, jac_f
     
     max_iter=300
-    regu = jnp.array(100.)
     
     x_trj = rollout(x0, u_trj)
     # cost_trace = jax.ops.index_update(
     #     jnp.zeros((max_iter+1)), jax.ops.index[0], cost_trj(x_trj, u_trj, target)
     # )
     cost_trace = jnp.zeros((max_iter+1))
-    cost_trace.at[0].set(cost_trj(x_trj, u_trj, target))
+    # print(cost_trj(x_trj, u_trj, target))
+    cost_trace = cost_trace.at[0].set(cost_trj(x_trj, u_trj, target))
 
-    x_trj, u_trj, cost_trace, regu, target = lax.fori_loop(
-        1, max_iter+1, run_ilqr_looper, [x_trj, u_trj, cost_trace, regu, target]
+    all_cost_trace = jnp.zeros((max_iter+1))
+    all_cost_trace = all_cost_trace.at[0].set(cost_trj(x_trj, u_trj, target))
+
+    x_trj, u_trj, cost_trace, all_cost_trace, target = lax.fori_loop(
+        1, max_iter+1, run_ilqr_looper, [x_trj, u_trj, cost_trace, all_cost_trace, target]
     )
     
-    return x_trj, u_trj, cost_trace
+    return x_trj, u_trj, cost_trace, all_cost_trace
+
+# @jit
+# def run_ilqr_looper(i, input_):
+#     x_trj, u_trj, cost_trace, regu, target = input_
+#     k_trj, K_trj, expected_cost_redu = backward_pass(x_trj, u_trj, regu, target)
+#     x_trj_new, u_trj_new = forward_pass(x_trj, u_trj, k_trj, K_trj)
+    
+#     total_cost = cost_trj(x_trj_new, u_trj_new, target)
+    
+#     x_trj, u_trj, cost_trace, regu = lax.cond(
+#         pred = (cost_trace[i-1] > total_cost),    
+#         true_operand = [i, cost_trace, total_cost, x_trj, u_trj, x_trj_new, u_trj_new, regu],
+#         true_fun = run_ilqr_true_func,
+#         false_operand = [i, cost_trace, x_trj, u_trj, regu],
+#         false_fun = run_ilqr_false_func,
+#     )
+    
+#     max_regu = 10000.0
+#     min_regu = 0.01
+    
+#     regu += jax.nn.relu(min_regu - regu)
+#     regu -= jax.nn.relu(regu - max_regu)
+
+#     return [x_trj, u_trj, cost_trace, regu, target]
 
 @jit
 def run_ilqr_looper(i, input_):
-    x_trj, u_trj, cost_trace, regu, target = input_
-    k_trj, K_trj, expected_cost_redu = backward_pass(x_trj, u_trj, regu, target)
+    x_trj, u_trj, cost_trace, all_cost_trace, target = input_
+    k_trj, K_trj, expected_cost_redu = backward_pass(x_trj, u_trj, target)
     x_trj_new, u_trj_new = forward_pass(x_trj, u_trj, k_trj, K_trj)
     
     total_cost = cost_trj(x_trj_new, u_trj_new, target)
-    
-    x_trj, u_trj, cost_trace, regu = lax.cond(
+    all_cost_trace = all_cost_trace.at[i].set(total_cost)
+
+    x_trj, u_trj, cost_trace = lax.cond(
         pred = (cost_trace[i-1] > total_cost),
-        true_operand = [i, cost_trace, total_cost, x_trj, u_trj, x_trj_new, u_trj_new, regu],
+        true_operand = [i, cost_trace, total_cost, x_trj, u_trj, x_trj_new, u_trj_new],
         true_fun = run_ilqr_true_func,
-        false_operand = [i, cost_trace, x_trj, u_trj, regu],
+        false_operand = [i, cost_trace, x_trj, u_trj],
         false_fun = run_ilqr_false_func,
     )
-    
-    max_regu = 10000.0
-    min_regu = 0.01
-    
-    regu += jax.nn.relu(min_regu - regu)
-    regu -= jax.nn.relu(regu - max_regu)
 
-    return [x_trj, u_trj, cost_trace, regu, target]
+    return [x_trj, u_trj, cost_trace, all_cost_trace, target]    
+
+# @jit
+# def run_ilqr_true_func(input_):
+#     i, cost_trace, total_cost, x_trj, u_trj, x_trj_new, u_trj_new, regu = input_
+    
+#     # cost_trace = jax.ops.index_update(
+#     #     cost_trace, jax.ops.index[i], total_cost 
+#     # )
+#     cost_trace.at[i].set(total_cost)
+
+#     x_trj = x_trj_new
+#     u_trj = u_trj_new
+#     regu *= 0.7
+    
+#     return [x_trj, u_trj, cost_trace, regu]
 
 @jit
 def run_ilqr_true_func(input_):
-    i, cost_trace, total_cost, x_trj, u_trj, x_trj_new, u_trj_new, regu = input_
+    i, cost_trace, total_cost, x_trj, u_trj, x_trj_new, u_trj_new = input_
     
     # cost_trace = jax.ops.index_update(
     #     cost_trace, jax.ops.index[i], total_cost 
     # )
-    cost_trace.at[i].set(total_cost)
+    cost_trace = cost_trace.at[i].set(total_cost)
 
     x_trj = x_trj_new
     u_trj = u_trj_new
-    regu *= 0.7
     
-    return [x_trj, u_trj, cost_trace, regu]
+    return [x_trj, u_trj, cost_trace]
+
+
+# @jit
+# def run_ilqr_false_func(input_):
+#     i, cost_trace, x_trj, u_trj, regu = input_
+    
+#     # cost_trace = jax.ops.index_update(
+#     #     cost_trace, jax.ops.index[i], cost_trace[i-1] 
+#     # )
+#     cost_trace.at[i].set(cost_trace[i-1])
+#     regu *= 2.0
+    
+#     return [x_trj, u_trj, cost_trace, regu]
+
 
 @jit
 def run_ilqr_false_func(input_):
-    i, cost_trace, x_trj, u_trj, regu = input_
+    i, cost_trace, x_trj, u_trj = input_
     
     # cost_trace = jax.ops.index_update(
     #     cost_trace, jax.ops.index[i], cost_trace[i-1] 
     # )
-    cost_trace.at[i].set(cost_trace[i-1])
-    regu *= 2.0
-    
-    return [x_trj, u_trj, cost_trace, regu]
-
+    cost_trace = cost_trace.at[i].set(cost_trace[i-1])
+    return [x_trj, u_trj, cost_trace]
 
 # carla init
 env = CarEnv()
@@ -396,36 +509,48 @@ for i in range(1):
 
     for k in tqdm(range(2000)):
         # start = time.time()
-
         # state[2] += 0.01
         state = jnp.array(state)
         
         # u_trj = np.random.randn(TIME_STEPS-1, N_U)
         steer_sample = np.random.randn(TIME_STEPS-1, 1) * 0.7
-        thrust_sample = np.random.randn(TIME_STEPS-1, 1) * 2500 + 4000
-        u_trj = np.hstack((steer_sample, thrust_sample))
-
-
-        # u_trj[:,1] -= jnp.pi/2.5
-        # u_trj[:,1] -= np.pi/8
-        u_trj = jnp.array(u_trj)
+        thrust_sample = np.random.randn(TIME_STEPS-1, 1) * 5000 - 2500
+        u_init = np.hstack((steer_sample, thrust_sample))
+        u_init = jnp.array(u_init)        
         waypoints = jnp.array(waypoints)
-        
-        x_trj, u_trj, cost_trace = run_ilqr_main(state, u_trj, waypoints)
+
+        x_trj = rollout(state, u_init)
+
+        print(cost_trj(x_trj, u_init, waypoints))    
+
+        x_trj, u_trj, cost_trace, all_cost_trace = run_ilqr_main(state, u_init, waypoints)
+
+        print(all_cost_trace)
+        # print(np.linalg.norm(u_trj - u_init))
         # end = time.time()
         # if k > 1:
         #     total_time += end - start
         
-        draw_planned_trj(env.world, np.array(x_trj), env.location_[2], color=(0, 223, 222))
+        # draw_planned_trj(env.world, np.array(x_trj), env.location_[2], color=(0, 223, 222))
+
+        
         for j in range(MPC_INTERVAL):
             steer = u_trj[j,0]
             thrust = u_trj[j,1]
 
+            steer = np.clip(steer/1.2, -1, 1) 
+            thrust = np.clip(thrust/3000, -1, 1)
+            if thrust < 0:
+                throttle = 0
+                brake = -thrust
+            else:
+                throttle = thrust
+                brake = 0 
             # thrust = np.clip(thrust, -5000, 5000)
             # steering = jnp.sin(u_trj[j,0])
             # throttle = jnp.sin(u_trj[j,1])*0.5 + 0.5
             # brake = jnp.sin(u_trj[j,2])*0.5 + 0.5
-            state, waypoints, done, _ = env.step(np.array([steer, thrust]))
+            state, waypoints, done, _ = env.step(np.array([steer, throttle, brake]))
 
         # tqdm.write("final estimated cost = {0:.2f} \n velocity = {1:.2f}".format(cost_trace[-1],state[2]))
         # if k > 1:
