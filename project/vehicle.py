@@ -323,10 +323,6 @@ class Vehicle():
         veh_pos = np.hstack((veh_x_pos, veh_y_pos))
         np.save("waypoints.npy", wps)
         np.save("veh_pos_" + str(target_speed) + ".npy", veh_pos)
-        
-        
-
-
 
 
     @torch.inference_mode()
