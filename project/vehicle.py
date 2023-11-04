@@ -5,13 +5,14 @@ from math import sqrt
 import cv2
 import open3d as o3d
 from matplotlib import cm
+import matplotlib.pyplot as plt
 
 from config import Config
 from control.controller_base import BaseController
 from control.pid_vehicle_control import PIDController
 from utils.misc import draw_waypoints
 from utils.lidar import *
-from leaderboard.leaderboard.envs.sensor_interface import CallBack, SensorInterface
+from leaderboard.envs.sensor_interface import CallBack, SensorInterface
 
 from typing import Tuple, Union, Optional, Dict
 
@@ -38,19 +39,19 @@ class Vehicle():
     @property
     def location(self) -> carla.Location:
         return self._vehicle.get_location()
-    
+
     @property
     def controller(self) -> BaseController:
         return self._controller
-    
+
     @controller.setter
     def controller(self, controller:BaseController):
         self._controller = controller
-    
+
     @property
     def planner(self):
         return self._planner
-    
+
     @planner.setter
     def planner(self, planner):
         self._planner = planner
@@ -167,12 +168,12 @@ class Vehicle():
     def set_route(self, target:carla.Location, start:Optional[carla.Location]=None):
         """
         Function to set a route for the vehicle to follow.
-        
+
         !!! currently only works with carla'a GlobalRoutePlanner !!!
 
         Args:
             target: target location for the vehicle to reach.
-        
+
         Returns:
             None
         """
@@ -194,7 +195,7 @@ class Vehicle():
         """
         if self.route is None:
             raise Exception("No route was set. Use `set_route()` first.")
-        
+
         n_wps = len(self.route)
 
         if visualize:
@@ -202,6 +203,11 @@ class Vehicle():
 
         i = 0
         target_wp = self.route[0]
+
+        wps = np.zeros((len(self.route), 2))
+        for w in range(len(self.route)):
+            wps[w, 0] = self.route[w].transform.location.x
+            wps[w, 1] = self.route[w].transform.location.y
 
         # # PointCloud visualization
         # pcl_vis = o3d.visualization.Visualizer()
@@ -230,8 +236,36 @@ class Vehicle():
         #     [0.0, 0.0, 1.0]]))
         # pcl_vis.add_geometry(axis)
 
+
+        veh_x_pos = []
+        veh_y_pos = []
+
         lidar_buffer = np.empty((0,3))
+
+        #for checking if the car is stuck
+        same_as_prev_count = 0
+        count_thresh = 100
+        dist_thresh = 0.01 
+        prev_veh_x = self._vehicle.get_transform().location.x
+        prev_veh_y = self._vehicle.get_transform().location.y
+
         while True:
+
+            veh_x = self._vehicle.get_transform().location.x
+            veh_y = self._vehicle.get_transform().location.y
+            veh_x_pos.append(veh_x)
+            veh_y_pos.append(veh_y)
+
+            #check if the car has moved
+            dist = np.sqrt((veh_x - prev_veh_x)**2 + (veh_y - prev_veh_y)**2)
+            if dist < dist_thresh:
+                same_as_prev_count += 1
+            else:
+                same_as_prev_count = 0
+            #if the car hasn't moved for a while, break
+            if same_as_prev_count > count_thresh:
+                break
+
             self._world.tick()
             # Offset spectator camera to follow car
             spectator_offset = -5 * self._vehicle.get_transform().rotation.get_forward_vector() + \
@@ -244,13 +278,13 @@ class Vehicle():
             control = self._controller.get_control((target_speed, target_wp))
             self._vehicle.apply_control(control)
             veh_dist = self.dist(target_wp)
-            
+
             # Collect data and post-process
             data_dict = self._sensor_interface.get_data()
             out_data = self.data_tick(data_dict)
             cv2.imshow("camera", data_dict['rgb_front'][1])
             cv2.waitKey(1)
-            
+
             # Handling of lidar buffer, display
             lidar_buffer = np.vstack((lidar_buffer, out_data['lidar'][:,:3]))
             if lidar_buffer.shape[0] >= self.config.lidar['buffer_threshold']:
@@ -276,9 +310,24 @@ class Vehicle():
                 else:
                     target_wp = self.route[i]
 
+            prev_veh_x = veh_x
+            prev_veh_y = veh_y
+
         # Stop vehicle at final waypoint
         control = self._controller.get_control((0.0, self.route[-1]))
         self._vehicle.apply_control(control)
+
+        #save the data
+        veh_x_pos = np.array(veh_x_pos).reshape(-1, 1)
+        veh_y_pos = np.array(veh_y_pos).reshape(-1, 1)
+        veh_pos = np.hstack((veh_x_pos, veh_y_pos))
+        np.save("waypoints.npy", wps)
+        np.save("veh_pos_" + str(target_speed) + ".npy", veh_pos)
+        
+        
+
+
+
 
     @torch.inference_mode()
     def data_tick(
@@ -331,3 +380,6 @@ class Vehicle():
                 self._sensors[id].destroy()
                 self._sensors[id] = None
         self._sensors = {}
+
+    def plot_path(self):
+        pass
