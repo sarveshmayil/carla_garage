@@ -120,7 +120,7 @@ def cost_1step(x, u, route): # x.shape:(5), u.shape(2)
     steering = np.sin(u[0])
     throttle = np.sin(u[1])*0.5 + 0.5
     brake = np.sin(u[2])*0.5 + 0.5    
-    # c_position = distance_func(x, route)
+    c_position = distance_func(x, route)
     c_speed = (x[2]-8)**2 # -x[2]**2 
     c_control = (steering**2 + throttle**2 + brake**2 + throttle*brake)
 
