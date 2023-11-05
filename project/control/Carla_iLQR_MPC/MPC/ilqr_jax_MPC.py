@@ -34,7 +34,7 @@ N_U = 2
 # MODEL_NAME = "bicycle_model_100ms_20000_v4_jax"
 # model_path="../SystemID/model/net_{}.model".format(MODEL_NAME)
 # NN_W1, NN_W2, NN_W3, NN_LR_MEAN = pickle.load(open(model_path, mode="rb"))
-TIME_STEPS = 50
+TIME_STEPS = 60
 
 # # NOTE: Set dp to be the same as carla
 dp = 1 # same as waypoint interval
@@ -170,8 +170,8 @@ def cost_1step(state, action, route, goal_speed = 8.):
     # return (0.*c_position + 0.0005*c_speed + 0.*c_control)/TIME_STEPS_RATIO #~2.3
     # return (.001*c_position + 0.*c_speed + 0.*c_control)/TIME_STEPS_RATIO #~1.29
     # return (0.*c_position + 0.*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~1.7
-    return (0.003*c_position + 0.00025*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~7 on init
-
+    # return (0.003*c_position + 0.00025*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~7 on init
+    return (0.03*c_position + 0.0025*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~7 on init
 @jit
 def cost_final(state, route): 
     '''
@@ -182,7 +182,7 @@ def cost_final(state, route):
     c_position = jnp.square(state[0]-route[-1,0]) + jnp.square(state[2]-route[-1,1])
     c_speed =jnp.sqrt(jnp.square(state[1]) + jnp.square(state[3]))
 
-    return (0.003*c_position/(TARGET_RATIO**2) + 0.00025*c_speed)*1
+    return (0.003*c_position/(TARGET_RATIO**2) + 0.*c_speed)*1
 
 @jit
 def cost_trj(x_trj, u_trj, route):
@@ -462,7 +462,7 @@ def run_ilqr_true_func(input_):
     # cost_trace = jax.ops.index_update(
     #     cost_trace, jax.ops.index[i], total_cost 
     # )
-    cost_trace.at[i].set(total_cost)
+    cost_trace = cost_trace.at[i].set(total_cost)
 
     x_trj = x_trj_new
     u_trj = u_trj_new
@@ -493,6 +493,7 @@ def run_ilqr_false_func(input_):
     #     cost_trace, jax.ops.index[i], cost_trace[i-1] 
     # )
     cost_trace = cost_trace.at[i].set(cost_trace[i-1])
+
     regu *= 2.0
     
     return [x_trj, u_trj, cost_trace, regu]
@@ -521,7 +522,7 @@ for i in range(1):
         
         # u_trj = np.random.randn(TIME_STEPS-1, N_U)
         steer_sample = np.random.randn(TIME_STEPS-1, 1) * 0.7
-        thrust_sample = np.random.randn(TIME_STEPS-1, 1) * 6000 - 2000
+        thrust_sample = np.random.randn(TIME_STEPS-1, 1) * 1000 + 2000
         u_init = np.hstack((steer_sample, thrust_sample))
         u_init = jnp.array(u_init)        
         waypoints = jnp.array(waypoints)
@@ -533,8 +534,8 @@ for i in range(1):
         # x_trj, u_trj, cost_trace = run_ilqr_main(state, u_init, waypoints)
         x_trj, u_trj, cost_trace, all_cost_trace = run_ilqr_main(state, u_init, waypoints)
 
-        # print(cost_trace)
-        print(all_cost_trace)
+        print(cost_trace)
+        # print(all_cost_trace)
         # print(np.linalg.norm(u_trj - u_init))
         # end = time.time()
         # if k > 1:
@@ -549,12 +550,14 @@ for i in range(1):
 
             steer = np.clip(steer/1.2, -1, 1) 
             thrust = np.clip(thrust/3000, -1, 1)
+            
             if thrust < 0:
                 throttle = 0
                 brake = -thrust
             else:
                 throttle = thrust
                 brake = 0 
+            
             # thrust = np.clip(thrust, -5000, 5000)
             # steering = jnp.sin(u_trj[j,0])
             # throttle = jnp.sin(u_trj[j,1])*0.5 + 0.5
