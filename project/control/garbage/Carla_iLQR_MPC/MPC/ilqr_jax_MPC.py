@@ -116,16 +116,16 @@ def distance_func_looper(input_, p):
 @jit
 def cost_1step(x, u, route): # x.shape:(5), u.shape(2)
     global TIME_STEPS_RATIO
-    TIME_STEPS_RATIO =1 
     steering = np.sin(u[0])
     throttle = np.sin(u[1])*0.5 + 0.5
-    brake = np.sin(u[2])*0.5 + 0.5    
+    brake = np.sin(u[2])*0.5 + 0.5
+    
     c_position = distance_func(x, route)
     c_speed = (x[2]-8)**2 # -x[2]**2 
     c_control = (steering**2 + throttle**2 + brake**2 + throttle*brake)
 
-    # return (0.04*c_position + 0.002*c_speed + 0.0005*c_control)/TIME_STEPS_RATIO
     return (0.04*c_position + 0.002*c_speed + 0.0005*c_control)/TIME_STEPS_RATIO
+
 @jit
 def cost_final(x, route): # x.shape:(5), u.shape(2)
     global TARGET_RATIO
@@ -230,11 +230,12 @@ def forward_pass_looper(i, input_):
     
     u_next = u_trj[i] + k_trj[i] + K_trj[i]@(x_trj_new[i] - x_trj[i])
     # u_trj_new = jax.ops.index_update(u_trj_new, jax.ops.index[i], u_next)
-    u_trj_new= u_trj_new.at[i].set(u_next)
+    u_trj_new = u_trj_new.at[i].set(u_next)
 
     x_next = discrete_dynamics(x_trj_new[i], u_trj_new[i])
     # x_trj_new = jax.ops.index_update(x_trj_new, jax.ops.index[i+1], x_next)
-    x_trj_new= x_trj_new.at[i+1].set(x_next)
+    x_trj_new = x_trj_new.at[i+1].set(x_next)
+    
     return [x_trj, u_trj, k_trj, K_trj, x_trj_new, u_trj_new]
 
 @jit
@@ -262,10 +263,9 @@ def backward_pass_looper(i, input_):
     k, K = gains(Q_uu_regu, Q_u, Q_ux)
     # k_trj = jax.ops.index_update(k_trj, jax.ops.index[n], k)
     k_trj = k_trj.at[n].set(k)
-
+    
     # K_trj = jax.ops.index_update(K_trj, jax.ops.index[n], K)
     K_trj = K_trj.at[n].set(K)
-
     V_x, V_xx = V_terms(Q_x, Q_u, Q_xx, Q_ux, Q_uu, K, k)
     expected_cost_redu += expected_cost_reduction(Q_u, Q_uu, k)
     
@@ -279,11 +279,11 @@ def run_ilqr_main(x0, u_trj, target):
     regu = np.array(100.)
     
     x_trj = rollout(x0, u_trj)
+    cost_trace = np.zeros((max_iter+1))
     # cost_trace = jax.ops.index_update(
     #     np.zeros((max_iter+1)), jax.ops.index[0], cost_trj(x_trj, u_trj, target)
     # )
-    init_cost = cost_trj(x_trj, u_trj, target)
-    cost_trace = cost_trace.at[0].set(init_cost)
+    cost_trace = cost_trace.at[0].set(cost_trj(x_trj, u_trj, target))
 
     x_trj, u_trj, cost_trace, regu, target = lax.fori_loop(
         1, max_iter+1, run_ilqr_looper, [x_trj, u_trj, cost_trace, regu, target]
@@ -323,7 +323,6 @@ def run_ilqr_true_func(input_):
     #     cost_trace, jax.ops.index[i], total_cost 
     # )
     cost_trace = cost_trace.at[i].set(total_cost)
-
     x_trj = x_trj_new
     u_trj = u_trj_new
     regu *= 0.7
@@ -337,7 +336,7 @@ def run_ilqr_false_func(input_):
     # cost_trace = jax.ops.index_update(
     #     cost_trace, jax.ops.index[i], cost_trace[i-1] 
     # )
-    cost_trace = cost_trace.at[i].set(cost_trace[i-1])
+    cost_trace = cost_trace.at[i].set(cost_trace[i-1] )
 
     regu *= 2.0
     
@@ -404,3 +403,11 @@ if VIDEO_RECORD:
     os.system("ffmpeg -r 50 -f image2 -i Snaps/%05d.png -s {}x{} -aspect 16:9 -vcodec libx264 -crf 25 -y Videos/result.avi".
                 format(RES_X, RES_Y))
 
+
+
+# TODO:
+# * check 0 speed issue
+# * optimize speed cost setting
+# * retrain dynamical model, perhaps with automatically collected data and boosting/weighing
+# * check uncertainty model and iLQG
+# * check Guided Policy Search

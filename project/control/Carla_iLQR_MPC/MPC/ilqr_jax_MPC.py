@@ -170,9 +170,12 @@ def cost_1step(state, action, route, goal_speed = 8.):
     # return (0.*c_position + 0.0005*c_speed + 0.*c_control)/TIME_STEPS_RATIO #~2.3
     # return (.001*c_position + 0.*c_speed + 0.*c_control)/TIME_STEPS_RATIO #~1.29
     # return (0.*c_position + 0.*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~1.7
-    return (0.003*c_position + 0.00025*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~7 on init
+    # return (0.003*c_position + 0.00025*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~7 on init
     # return (0.03*c_position + 0.0025*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~7 on init
     # return (0.6*c_position + 0.0025*c_speed + 0.04*c_control)/TIME_STEPS_RATIO #~7 on init
+    return (0.04*c_position + 0.002*c_speed + 0.0005*c_control)/TIME_STEPS_RATIO
+
+
 @jit
 def cost_final(state, route): 
     '''
@@ -183,7 +186,9 @@ def cost_final(state, route):
     c_position = jnp.square(state[0]-route[-1,0]) + jnp.square(state[2]-route[-1,1])
     c_speed =jnp.sqrt(jnp.square(state[1]) + jnp.square(state[3]))
 
-    return (0.003*c_position/(TARGET_RATIO**2) + 0.*c_speed)*1
+    # return (0.003*c_position/(TARGET_RATIO**2) + 0.*c_speed)*1
+    return (c_position/(TARGET_RATIO**2) + 0.0*c_speed)*1
+
 
 @jit
 def cost_trj(x_trj, u_trj, route):
@@ -522,7 +527,7 @@ for i in range(1):
         state = jnp.array(state)
         
         # u_trj = np.random.randn(TIME_STEPS-1, N_U)
-        steer_sample = np.random.randn(TIME_STEPS-1, 1) * 0.2
+        steer_sample = np.random.randn(TIME_STEPS-1, 1) * 0.15
         thrust_sample = np.random.randn(TIME_STEPS-1, 1) * 500 + 1000
         u_init = np.hstack((steer_sample, thrust_sample))
         u_init = jnp.array(u_init)        
