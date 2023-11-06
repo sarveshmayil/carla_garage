@@ -25,7 +25,7 @@ import os
 
 from jax.config import config
 # config.update("jax_debug_nans", True)
-jax.config.update("jax_enable_x64", True)
+    # jax.config.update("jax_enable_x64", True)
 # DT = 0.1# [s] delta time step, = 1/FPS_in_server
 N_X = 6
 N_U = 2
@@ -34,7 +34,7 @@ N_U = 2
 # MODEL_NAME = "bicycle_model_100ms_20000_v4_jax"
 # model_path="../SystemID/model/net_{}.model".format(MODEL_NAME)
 # NN_W1, NN_W2, NN_W3, NN_LR_MEAN = pickle.load(open(model_path, mode="rb"))
-TIME_STEPS = 60
+TIME_STEPS = 30 
 
 # # NOTE: Set dp to be the same as carla
 dp = 1 # same as waypoint interval
@@ -57,7 +57,7 @@ def continuous_dynamics(state, action):
     # friction coeff: 3.5, long_stiff: 3000.0, lat_stiff: 20.0, lat_stiff_max_load: 3.0
     # wheelbase: 3, track width: 1.67
     Nw=2 #Number wheels
-    f=3.5 #friction
+    f=3.5#friction
     a=1.35
     b=1.45
     # By=0.27
@@ -170,8 +170,9 @@ def cost_1step(state, action, route, goal_speed = 8.):
     # return (0.*c_position + 0.0005*c_speed + 0.*c_control)/TIME_STEPS_RATIO #~2.3
     # return (.001*c_position + 0.*c_speed + 0.*c_control)/TIME_STEPS_RATIO #~1.29
     # return (0.*c_position + 0.*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~1.7
-    # return (0.003*c_position + 0.00025*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~7 on init
-    return (0.03*c_position + 0.0025*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~7 on init
+    return (0.003*c_position + 0.00025*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~7 on init
+    # return (0.03*c_position + 0.0025*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~7 on init
+    # return (0.6*c_position + 0.0025*c_speed + 0.04*c_control)/TIME_STEPS_RATIO #~7 on init
 @jit
 def cost_final(state, route): 
     '''
@@ -521,8 +522,8 @@ for i in range(1):
         state = jnp.array(state)
         
         # u_trj = np.random.randn(TIME_STEPS-1, N_U)
-        steer_sample = np.random.randn(TIME_STEPS-1, 1) * 0.7
-        thrust_sample = np.random.randn(TIME_STEPS-1, 1) * 1000 + 2000
+        steer_sample = np.random.randn(TIME_STEPS-1, 1) * 0.2
+        thrust_sample = np.random.randn(TIME_STEPS-1, 1) * 500 + 1000
         u_init = np.hstack((steer_sample, thrust_sample))
         u_init = jnp.array(u_init)        
         waypoints = jnp.array(waypoints)
@@ -548,7 +549,7 @@ for i in range(1):
             steer = u_trj[j,0]
             thrust = u_trj[j,1]
 
-            steer = np.clip(steer/1.2, -1, 1) 
+            steer = np.clip(steer, -1, 1) 
             thrust = np.clip(thrust/3000, -1, 1)
             
             if thrust < 0:

@@ -53,7 +53,7 @@ pygame.init()
 # ==============================================================================
 
 DT_ = 0.01 # [s] delta time step, = 1/FPS_in_server
-N_DT = 10 # 5 ticks for training DDPG once
+N_DT = 100#1./DT_#1000 # 5 ticks for training DDPG once
 
 NO_RENDERING = False
 
