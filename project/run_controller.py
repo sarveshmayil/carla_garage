@@ -35,11 +35,11 @@ if __name__ == "__main__":
     client.set_timeout(10.0)
     world:carla.World = client.load_world('Town01')
 
-    #settings = world.get_settings()
-    #settings.no_rendering_mode = True
-    #settings.synchronous_mode = True
-    #settings.fixed_delta_seconds = 0.05
-    #world.apply_settings(settings)
+    settings = world.get_settings()
+    settings.no_rendering_mode = False
+    settings.synchronous_mode = True
+    settings.fixed_delta_seconds = 0.05
+    world.apply_settings(settings)
 
     wmap:carla.Map = world.get_map()
     spawn_points = wmap.get_spawn_points()
@@ -49,6 +49,6 @@ if __name__ == "__main__":
     vehicle = Vehicle(world=world)
     vehicle.spawn(location=a)
     vehicle.controller = pid_controller(vehicle._vehicle)
-    vehicle.planner = GlobalRoutePlanner(wmap, sampling_resolution=2)
+    vehicle.planner = GlobalRoutePlanner(wmap, sampling_resolution=10)
     vehicle.set_route(start=a, target=b)
-    vehicle.follow_route(target_speed=30, visualize=True)
+    vehicle.follow_route(target_speed=30, visualize=False)

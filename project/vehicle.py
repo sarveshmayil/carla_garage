@@ -5,14 +5,17 @@ from math import sqrt
 import cv2
 import open3d as o3d
 from matplotlib import cm
+from agents.tools.misc import get_speed
 
-from config import Config
+from config import Config, GlobalConfig
 from control.controller_base import BaseController
 from control.pid_vehicle_control import PIDController
 from utils.misc import draw_waypoints
 from utils.lidar import *
-from model import *
+from model import LidarCenterNet
+from center_net import LidarCenterNetHead
 from leaderboard.leaderboard.envs.sensor_interface import CallBack, SensorInterface
+from GlobalConfig import GlobalConfig
 
 from typing import Tuple, Union, Optional, Dict
 
@@ -31,12 +34,17 @@ class Vehicle():
         self.device = device
         self.route = []
 
-        self.config = Config()
+        self.vehicle_config = Config()
+        self.model_config = GlobalConfig()
 
         self._sensor_interface = SensorInterface()
         self._sensors = {}
 
-        self._model = LidarCenterNet()
+        model_config = ModelConfig().get()
+        self._model = LidarCenterNet(model_config).to("cuda")
+        self._model.eval()
+        state_dict = torch.load(r"D:\Projects\av-project\carla_garage\pretrained_models\leaderboard\tfpp_wp_all_0\model_0030.pth")
+        self._model.load_state_dict(state_dict)
 
     @property
     def location(self) -> carla.Location:
@@ -93,10 +101,10 @@ class Vehicle():
 
     def get_sensor_config(self):
         sensors = []
-        for cam in self.config.cameras:
+        for cam in self.vehicle_config.cameras:
             sensors.append(cam)
-        if self.config.lidar is not None:
-            sensors.append(self.config.lidar)
+        if self.vehicle_config.lidar is not None:
+            sensors.append(self.vehicle_config.lidar)
         return sensors
 
     def setup_sensors(self):
@@ -180,6 +188,28 @@ class Vehicle():
         """
         self.route = [wp[0] for wp in self._planner.trace_route(start, target)]
 
+    def waypoint_to_bev(self, waypoint, inverse=False):
+        '''
+        in: numpy [3,] in world frame
+        out: torch [2,] (x,y) in bev frame
+        '''
+        out = waypoint[:2]
+        yaw = np.deg2rad(self._vehicle.get_transform().rotation.yaw)
+        vehicle_pos = [self._vehicle.get_transform().location.x, self._vehicle.get_transform().location.y]
+        rotation_matrix = np.array([[np.cos(yaw), -np.sin(yaw)],
+                                        [np.sin(yaw),  np.cos(yaw)]])   
+        if not inverse:
+            out = rotation_matrix @ (out - vehicle_pos).T
+            out[0] = -out[0]
+            out = torch.tensor(out).to("cuda").to(torch.float32)
+        else:
+            out = out.detach().cpu().numpy()
+            out[0] = -out[0]
+            out = np.linalg.inv(rotation_matrix) @ out + vehicle_pos
+
+        return out
+    
+
     def follow_route(self, target_speed=30.0, threshold=3.5, visualize=False):
         """
         Function to use controller to follow a route.
@@ -230,12 +260,13 @@ class Vehicle():
         #     [0.0, 0.0, 1.0]]))
         # pcl_vis.add_geometry(axis)
 
-        lidar_buffer = np.empty((0,3))
+        lidar_buffer = np.empty((0,4))
         while True:
             self._world.tick()
+            draw_waypoints(self._world, [target_wp])
             # Offset spectator camera to follow car
-            spectator_offset = -5 * self._vehicle.get_transform().rotation.get_forward_vector() + \
-                                2 * self._vehicle.get_transform().rotation.get_up_vector()
+            spectator_offset = -10 * self._vehicle.get_transform().rotation.get_forward_vector() + \
+                                5 * self._vehicle.get_transform().rotation.get_up_vector()
             spectator_transform = self._vehicle.get_transform()
             spectator_transform.location += spectator_offset
             self._world.get_spectator().set_transform(spectator_transform)
@@ -252,8 +283,8 @@ class Vehicle():
             cv2.waitKey(1)
             
             # Handling of lidar buffer, display
-            lidar_buffer = np.vstack((lidar_buffer, out_data['lidar'][:,:3]))
-            if lidar_buffer.shape[0] >= self.config.lidar['buffer_threshold']:
+            lidar_buffer = np.vstack((lidar_buffer, out_data['lidar']))
+            if lidar_buffer.shape[0] >= self.vehicle_config.lidar['buffer_threshold']:
                 # norm_lidar_buffer = lidar_buffer / np.max(abs(lidar_buffer))
                 # pcl.points = o3d.utility.Vector3dVector(norm_lidar_buffer)
 
@@ -261,10 +292,27 @@ class Vehicle():
                 # pcl_vis.poll_events()
                 # pcl_vis.update_renderer()
 
-                lidar_bev = lidar_to_bev(lidar_buffer, ranges=[(0,40), (-20,20), (-2,10)], res=0.1, visualize=True)
-                lidar_buffer = np.empty((0,3))
+                lidar_bev = lidar_to_bev(lidar_buffer, ranges=[(0,32), (-16,16), (-2,10)], res=0.125, visualize=True)
+                lidar_histogram = lidar_to_histogram_features(lidar_buffer, self.model_config)[None,:]
+                lidar_buffer = np.empty((0,4))
 
-                self._model(out_data['rgb'].permute(0,3,1,2), lidar_bev[None,:].to("cuda"), target_point=torch.tensor([300,0,0]))
+                control = torch.tensor([4,4])
+                ego_vel = get_speed(self._vehicle)
+
+                
+                waypoint_fuck = np.array([target_wp.transform.location.x,target_wp.transform.location.y,target_wp.transform.location.z])
+
+                #
+                vehicle_transform = self._vehicle.get_transform()
+                bev_waypoint = self.waypoint_to_bev(waypoint_fuck)
+                preds = self._model(out_data['rgb'].permute(0,3,1,2).to("cuda"), torch.tensor(lidar_histogram).to("cuda"), target_point=bev_waypoint, 
+                                        ego_vel=torch.tensor(ego_vel).reshape(1,1).to("cuda"), command = torch.tensor(control).to("cuda"))
+                pred_wp = preds[0][0]
+                for wp in pred_wp:
+                    world_wp = self.waypoint_to_bev(wp, inverse=True)
+                    begin = carla.Location(x=world_wp[0], y=world_wp[1])
+                    end = begin + carla.Location(z=2)
+                    self._world.debug.draw_arrow(begin, end, arrow_size=0.3, life_time=0)
 
             # If vehicle has reached waypoint, move to next waypoint
             if(veh_dist < threshold):
@@ -308,16 +356,19 @@ class Vehicle():
                 rgb.append(image)
             elif id.startswith('lidar'):
                 lidar_points = lidar_to_ego_coordinates(data_dict[id],
-                                                       lidar_pos=self.config.lidar['position'],
-                                                       lidar_rot=self.config.lidar['rotation'],
+                                                       lidar_pos=self.vehicle_config.lidar['position'],
+                                                       lidar_rot=self.vehicle_config.lidar['rotation'],
                                                        intensity=True)
-                intensity = lidar_points[:,-1]
-                intensity_col = 1.0 - np.log(intensity) / np.log(np.exp(-0.004 * 85))
-                int_color = np.c_[
-                    np.interp(intensity_col, VID_RANGE, VIRIDIS[:, 0]),
-                    np.interp(intensity_col, VID_RANGE, VIRIDIS[:, 1]),
-                    np.interp(intensity_col, VID_RANGE, VIRIDIS[:, 2])]
-                out_data['lidar'] = np.concatenate((lidar_points[:,:3], int_color), axis=1)
+                # intensity = lidar_points[:,-1]
+                # intensity_col = 1.0 - np.log(intensity) / np.log(np.exp(-0.004 * 85))
+                # int_color = np.c_[
+                #     np.interp(intensity_col, VID_RANGE, VIRIDIS[:, 0]),
+                #     np.interp(intensity_col, VID_RANGE, VIRIDIS[:, 1]),
+                #     np.interp(intensity_col, VID_RANGE, VIRIDIS[:, 2])]
+                # out_data['lidar'] = np.concatenate((lidar_points[:,:3], int_color), axis=1)
+                
+                
+                out_data['lidar'] = lidar_points
 
         rgb = np.concatenate(rgb, axis=1)
         rgb = torch.from_numpy(rgb).to(self.device, dtype=torch.float32).unsqueeze(0)
@@ -333,6 +384,31 @@ class Vehicle():
                 self._sensors[id].destroy()
                 self._sensors[id] = None
         self._sensors = {}
+
+
+
+class ModelConfig():
+    def __init__(self) -> None:
+        import json
+        import pickle
+        with open(r"D:\Projects\av-project\carla_garage\pretrained_models\leaderboard\tfpp_wp_all_0\args.txt") as file:
+            stuff = json.load(file)
+        with open(r"D:\Projects\av-project\carla_garage\pretrained_models\leaderboard\tfpp_wp_all_0\config.pickle",'rb') as file:
+            loaded_config = pickle.load(file)
+
+        self.model_config = GlobalConfig()
+        self.model_config.__dict__.update(loaded_config.__dict__)
+
+        for k, v in stuff.items():
+            if not isinstance(v, str):
+                exec(f'self.model_config.{k} = {v}')
+
+        #self.model_config.use_discrete_command= 0
+
+    def get(self):
+        return self.model_config
+
+
 
             
 
