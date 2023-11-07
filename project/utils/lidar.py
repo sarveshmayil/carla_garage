@@ -65,3 +65,38 @@ def lidar_to_ego_coordinates(lidar, lidar_pos=np.zeros(3), lidar_rot=np.zeros(3)
         ego_lidar = np.hstack((ego_lidar, lidar[1][:,-1][:,None]))
 
     return ego_lidar
+
+def lidar_to_histogram_features(lidar, model_config):
+    """
+    Convert LiDAR point cloud into 2-bin histogram over a fixed size grid
+    :param lidar: (N,3) numpy, LiDAR point cloud
+    :param use_ground_plane, whether to use the ground plane
+    :return: (2, H, W) numpy, LiDAR as sparse image
+    """
+
+    def splat_points(point_cloud):
+      # 256 x 256 grid
+      xbins = np.linspace(model_config.min_x, model_config.max_x,
+                          (model_config.max_x - model_config.min_x) * int(model_config.pixels_per_meter) + 1)
+      ybins = np.linspace(model_config.min_y, model_config.max_y,
+                          (model_config.max_y - model_config.min_y) * int(model_config.pixels_per_meter) + 1)
+      hist = np.histogramdd(point_cloud[:, :2], bins=(xbins, ybins))[0]
+      hist[hist > model_config.hist_max_per_pixel] = model_config.hist_max_per_pixel
+      overhead_splat = hist / model_config.hist_max_per_pixel
+      # The transpose here is an efficient axis swap.
+      # Comes from the fact that carla is x front, y right, whereas the image is y front, x right
+      # (x height channel, y width channel)
+      return overhead_splat.T
+
+    # Remove points above the vehicle
+    lidar = lidar[lidar[..., 2] < model_config.max_height_lidar]
+    below = lidar[lidar[..., 2] <= model_config.lidar_split_height]
+    above = lidar[lidar[..., 2] > model_config.lidar_split_height]
+    below_features = splat_points(below)
+    above_features = splat_points(above)
+    if model_config.use_ground_plane:
+      features = np.stack([below_features, above_features], axis=-1)
+    else:
+      features = np.stack([above_features], axis=-1)
+    features = np.transpose(features, (2, 0, 1)).astype(np.float32)
+    return features
