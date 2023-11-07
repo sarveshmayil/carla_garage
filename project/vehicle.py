@@ -5,16 +5,13 @@ from math import sqrt
 import cv2
 import open3d as o3d
 from matplotlib import cm
-from agents.tools.misc import get_speed
 
-from config import Config, GlobalConfig
+from config import Config
 from control.controller_base import BaseController
 from control.pid_vehicle_control import PIDController
 from utils.misc import draw_waypoints
 from utils.lidar import *
-from model.model import LidarCenterNet
 from leaderboard.envs.sensor_interface import CallBack, SensorInterface
-from GlobalConfig import GlobalConfig
 
 from typing import Tuple, Union, Optional, Dict
 
@@ -34,16 +31,9 @@ class Vehicle():
         self.route = []
 
         self.vehicle_config = Config()
-        self.model_config = GlobalConfig()
 
         self._sensor_interface = SensorInterface()
         self._sensors = {}
-
-        model_config = ModelConfig().get()
-        self._model = LidarCenterNet(model_config).to("cuda")
-        self._model.eval()
-        state_dict = torch.load(r"D:\Projects\av-project\carla_garage\pretrained_models\leaderboard\tfpp_wp_all_0\model_0030.pth")
-        self._model.load_state_dict(state_dict)
 
     @property
     def location(self) -> carla.Location:
@@ -158,20 +148,11 @@ class Vehicle():
 
     def set_controller_pid(self, lat_args:Dict[str, float]=None, long_args:Dict[str, float]=None):
         if lat_args is None:
-            args_lateral_dict = {
-                'K_P': 1.95,
-                'K_D': 0.2,
-                'K_I': 0.07,
-                'dt' : 0.1
-            }
+            args_lateral_dict = self.vehicle_config.pid["lateral"]
 
         if long_args is None:
-            args_long_dict = {
-                'K_P': 1.0,
-                'K_D': 0.0,
-                'K_I': 0.75,
-                'dt' : 0.1
-            }
+            args_long_dict = self.vehicle_config.pid["longitudinal"]
+
         self._controller = PIDController(self._vehicle, lateral_args=args_lateral_dict, longitudinal_args=args_long_dict)
 
     def set_route(self, target:carla.Location, start:Optional[carla.Location]=None):
@@ -199,11 +180,11 @@ class Vehicle():
         yaw = np.deg2rad(self._vehicle.get_transform().rotation.yaw)
         vehicle_pos = [self._vehicle.get_transform().location.x, self._vehicle.get_transform().location.y]
         rotation_matrix = np.array([[np.cos(yaw), -np.sin(yaw)],
-                                        [np.sin(yaw),  np.cos(yaw)]])   
+                                    [np.sin(yaw),  np.cos(yaw)]])   
         if not inverse:
             out = rotation_matrix @ (out - vehicle_pos).T
             out[0] = -out[0]
-            out = torch.tensor(out).to("cuda").to(torch.float32)
+            out = torch.tensor(out).to(self.device).to(torch.float32)
         else:
             out = out.detach().cpu().numpy()
             out[0] = -out[0]
@@ -211,7 +192,6 @@ class Vehicle():
 
         return out
     
-
     def follow_route(self, target_speed=30.0, threshold=3.5, visualize=False):
         """
         Function to use controller to follow a route.
@@ -229,43 +209,16 @@ class Vehicle():
         
         n_wps = len(self.route)
 
-        if visualize:
-            draw_waypoints(self._world, self.route, life_time=n_wps*5.0)
-
         i = 0
         target_wp = self.route[0]
-
-        # # PointCloud visualization
-        # pcl_vis = o3d.visualization.Visualizer()
-        # #pcl_vis.get_render_option().point_size = 1
-        # # pcl_vis.get_render_option().show_coordinate_frame = True
-        # pcl_vis_control = o3d.visualization.ViewControl()
-        # pcl_vis.create_window(height=480, width=640)
-        # pcl = o3d.geometry.PointCloud()
-        # pcl.points = o3d.utility.Vector3dVector(np.random.rand(10,3))
-        # pcl_vis.add_geometry(pcl)
-
-        # # Visualize xyz axes
-        # axis = o3d.geometry.LineSet()
-        # axis.points = o3d.utility.Vector3dVector(np.array([
-        #     [0.0, 0.0, 0.0],
-        #     [1.0, 0.0, 0.0],
-        #     [0.0, 1.0, 0.0],
-        #     [0.0, 0.0, 1.0]]))
-        # axis.lines = o3d.utility.Vector2iVector(np.array([
-        #     [0, 1],
-        #     [0, 2],
-        #     [0, 3]]))
-        # axis.colors = o3d.utility.Vector3dVector(np.array([
-        #     [1.0, 0.0, 0.0],
-        #     [0.0, 1.0, 0.0],
-        #     [0.0, 0.0, 1.0]]))
-        # pcl_vis.add_geometry(axis)
 
         lidar_buffer = np.empty((0,4))
         while True:
             self._world.tick()
-            draw_waypoints(self._world, [target_wp])
+
+            if visualize:
+                draw_waypoints(self._world, [target_wp])
+
             # Offset spectator camera to follow car
             spectator_offset = -10 * self._vehicle.get_transform().rotation.get_forward_vector() + \
                                 5 * self._vehicle.get_transform().rotation.get_up_vector()
@@ -287,34 +240,8 @@ class Vehicle():
             # Handling of lidar buffer, display
             lidar_buffer = np.vstack((lidar_buffer, out_data['lidar']))
             if lidar_buffer.shape[0] >= self.vehicle_config.lidar['buffer_threshold']:
-                # norm_lidar_buffer = lidar_buffer / np.max(abs(lidar_buffer))
-                # pcl.points = o3d.utility.Vector3dVector(norm_lidar_buffer)
-
-                # pcl_vis.update_geometry(pcl)
-                # pcl_vis.poll_events()
-                # pcl_vis.update_renderer()
-
                 lidar_bev = lidar_to_bev(lidar_buffer, ranges=[(0,32), (-16,16), (-2,10)], res=0.125, visualize=True)
-                lidar_histogram = lidar_to_histogram_features(lidar_buffer, self.model_config)[None,:]
                 lidar_buffer = np.empty((0,4))
-
-                control = torch.tensor([4,4])
-                ego_vel = get_speed(self._vehicle)
-
-                
-                waypoint_fuck = np.array([target_wp.transform.location.x,target_wp.transform.location.y,target_wp.transform.location.z])
-
-                #
-                vehicle_transform = self._vehicle.get_transform()
-                bev_waypoint = self.waypoint_to_bev(waypoint_fuck)
-                preds = self._model(out_data['rgb'].permute(0,3,1,2).to("cuda"), torch.tensor(lidar_histogram).to("cuda"), target_point=bev_waypoint, 
-                                        ego_vel=torch.tensor(ego_vel).reshape(1,1).to("cuda"), command = torch.tensor(control).to("cuda"))
-                pred_wp = preds[0][0]
-                for wp in pred_wp:
-                    world_wp = self.waypoint_to_bev(wp, inverse=True)
-                    begin = carla.Location(x=world_wp[0], y=world_wp[1])
-                    end = begin + carla.Location(z=2)
-                    self._world.debug.draw_arrow(begin, end, arrow_size=0.3, life_time=0)
 
             # If vehicle has reached waypoint, move to next waypoint
             if(veh_dist < threshold):
@@ -386,31 +313,3 @@ class Vehicle():
                 self._sensors[id].destroy()
                 self._sensors[id] = None
         self._sensors = {}
-
-
-
-class ModelConfig():
-    def __init__(self) -> None:
-        import json
-        import pickle
-        with open(r"D:\Projects\av-project\carla_garage\pretrained_models\leaderboard\tfpp_wp_all_0\args.txt") as file:
-            stuff = json.load(file)
-        with open(r"D:\Projects\av-project\carla_garage\pretrained_models\leaderboard\tfpp_wp_all_0\config.pickle",'rb') as file:
-            loaded_config = pickle.load(file)
-
-        self.model_config = GlobalConfig()
-        self.model_config.__dict__.update(loaded_config.__dict__)
-
-        for k, v in stuff.items():
-            if not isinstance(v, str):
-                exec(f'self.model_config.{k} = {v}')
-
-        #self.model_config.use_discrete_command= 0
-
-    def get(self):
-        return self.model_config
-
-
-
-            
-

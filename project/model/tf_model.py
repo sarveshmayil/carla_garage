@@ -1,15 +1,15 @@
 """
 The main model structure
 """
-import utils.transfuser_utils as t_u
-from utils.focal_loss import FocalLoss
+import model.utils.transfuser_utils as t_u
+from .utils.focal_loss import FocalLoss
 import numpy as np
 from pathlib import Path
-from transfuser import TransfuserBackbone, TransformerDecoderLayerWithAttention, TransformerDecoderWithAttention
-from bev_encoder import BevEncoder
-from aim import AIMBackbone
+from .transfuser import TransfuserBackbone, TransformerDecoderLayerWithAttention, TransformerDecoderWithAttention
+from .bev_encoder import BevEncoder
+from .aim import AIMBackbone
 from .data import CARLA_Data
-from center_net import LidarCenterNetHead
+from .center_net import LidarCenterNetHead
 import cv2
 
 import torch
@@ -276,7 +276,7 @@ class LidarCenterNet(nn.Module):
     if self.config.tp_attention:
       nn.init.uniform_(self.tp_pos_embed)
 
-  def forward(self, rgb, lidar_bev, target_point, ego_vel, command):
+  def forward(self, rgb, lidar_bev, target_point, ego_vel):
     bs = rgb.shape[0]
 
     if self.config.backbone == 'transFuser':
@@ -310,7 +310,6 @@ class LidarCenterNet(nn.Module):
         if self.config.use_velocity:
           extra_sensors.append(self.velocity_normalization(ego_vel))
         if self.config.use_discrete_command:
-          #extra_sensors.append(command)
           extra_sensors.append(torch.tensor([0,0,0,1,0,0])[None,:].to("cuda"))
         extra_sensors = torch.cat(extra_sensors, axis=1)
         extra_sensors = self.extra_sensor_encoder(extra_sensors)

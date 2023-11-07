@@ -1,3 +1,9 @@
+import os
+import carla
+import re
+
+file_dir = os.path.dirname(os.path.abspath(__file__))
+
 class Config:
     def __init__(self) -> None:
         self.cameras = [
@@ -21,15 +27,31 @@ class Config:
             "id": 'lidar'
         }
 
+        self.pid = {
+          "lateral": {
+            'K_P': 1.95,
+            'K_D': 0.2,
+            'K_I': 0.07,
+            'dt' : 0.1
+          },
+          "longitudinal": {
+            'K_P': 1.0,
+            'K_D': 0.0,
+            'K_I': 0.75,
+            'dt' : 0.1
+          }
+        }
+
+        self.model = {
+          "dir": os.path.join(file_dir, "..", "pretrained_models", "leaderboard", "tfpp_wp_all_0"),
+          "args": "args.txt",
+          "config": "config.pickle",
+          "weights": "model_0030.pth"
+        }
+
 """
 Config class that contains all the hyperparameters needed to build any model.
 """
-
-import os
-import carla
-import re
-
-
 class GlobalConfig:
   """
   Config class that contains all the hyperparameters needed to build any model.

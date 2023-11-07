@@ -4,7 +4,7 @@ Implements the AIM vision backbone.
 import torch
 from torch import nn
 import timm
-import utils.transfuser_utils as t_u
+import model.utils.transfuser_utils as t_u
 
 
 class AIMBackbone(nn.Module):

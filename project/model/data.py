@@ -14,8 +14,8 @@ import cv2
 import gzip
 import laspy
 import io
-import utils.transfuser_utils as t_u
-import utils.gaussian_target as g_t
+import model.utils.transfuser_utils as t_u
+import model.utils.gaussian_target as g_t
 import random
 from sklearn.utils.class_weight import compute_class_weight
 from model.center_net import angle2class

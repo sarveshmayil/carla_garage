@@ -1,6 +1,7 @@
 import carla
 
 from vehicle import Vehicle
+from autonomous_agent import Agent
 from control.pid_vehicle_control import PIDController
 
 from agents.navigation.controller import VehiclePIDController
@@ -36,7 +37,7 @@ if __name__ == "__main__":
     world:carla.World = client.load_world('Town01')
 
     settings = world.get_settings()
-    settings.no_rendering_mode = False
+    settings.no_rendering_mode = True
     settings.synchronous_mode = True
     settings.fixed_delta_seconds = 0.05
     world.apply_settings(settings)
@@ -46,7 +47,8 @@ if __name__ == "__main__":
     a = carla.Location(spawn_points[0].location)
     b = carla.Location(spawn_points[100].location)
 
-    vehicle = Vehicle(world=world)
+    # vehicle = Vehicle(world=world)
+    vehicle = Agent(world=world)
     vehicle.spawn(location=a)
     vehicle.controller = pid_controller(vehicle._vehicle)
     vehicle.planner = GlobalRoutePlanner(wmap, sampling_resolution=10)

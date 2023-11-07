@@ -2,11 +2,11 @@
 Center Net Head implementation adapted from MM Detection
 """
 
-import utils.transfuser_utils as t_u
+import model.utils.transfuser_utils as t_u
 import numpy as np
 import torch
 from torch import nn
-import utils.gaussian_target as g_t
+import model.utils.gaussian_target as g_t
 
 
 class LidarCenterNetHead(nn.Module):

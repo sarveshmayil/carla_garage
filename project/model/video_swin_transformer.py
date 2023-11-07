@@ -9,7 +9,7 @@ from torch import nn
 from torch.utils import checkpoint
 import numpy as np
 from timm.models.layers import DropPath, trunc_normal_
-import utils.transfuser_utils as t_u
+import model.utils.transfuser_utils as t_u
 
 from functools import reduce, lru_cache
 from operator import mul
