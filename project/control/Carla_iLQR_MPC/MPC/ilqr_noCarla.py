@@ -7,9 +7,9 @@ np.set_printoptions(precision=3)
 
 # from jax.config import config
 # config.update("jax_enable_x64", True)
-
+import sys
 import numpy as onp
-
+onp.set_printoptions(threshold=sys.maxsize)
 import pickle
 import matplotlib.pyplot as plt
 plt.style.use("seaborn")
@@ -29,13 +29,6 @@ DT = 0.1# [s] delta time step, = 1/FPS_in_server
 N_X = 6
 N_U = 2
 TIME_STEPS = 50
-# MODEL_NAME = "bicycle_model_100000_v2_jax"
-MODEL_NAME = "bicycle_model_100ms_20000_v4_jax"
-model_path="../SystemID/model/net_{}.model".format(MODEL_NAME)
-NN_W1, NN_W2, NN_W3, NN_LR_MEAN = pickle.load(open(model_path, mode="rb"))
-
-
-
 
 @jit
 def continuous_dynamics(state, action):
@@ -89,7 +82,7 @@ def continuous_dynamics(state, action):
     dzdt = [state[1]*np.cos(state[4]) - state[3]*np.sin(state[4]), 
             (-f*m*g+Nw*F_x-F_yf*np.sin(delta_f))/m+state[3]*state[5], 
             state[1]*np.sin(state[4]) + state[3]*np.cos(state[4]), 
-            (F_yf*np.cos(delta_f) + F_yr) * np.reciprocal(m-state[1]*state[5]), 
+            (F_yf*np.cos(delta_f) + F_yr)/m-state[1]*state[5], 
             state[5],
             (F_yf*a*np.cos(delta_f)-F_yr*b)/Iz]
     
@@ -123,18 +116,6 @@ def distance_func_looper(input_, p):
 
     return input_, -(delta_x**2.0 + delta_y**2.0)/(1.0*dp**2.0)
 
-# @jit
-# def cost_1step(x, u, route): # x.shape:(5), u.shape(2)
-#     global TIME_STEPS_RATIO
-#     # steering = np.sin(u[0])
-#     throttle = np.sin(u[1])*0.5 + 0.5
-#     brake = np.sin(u[2])*0.5 + 0.5
-    
-#     c_position = distance_func(x, route)
-#     c_speed = (x[2]-8)**2 # -x[2]**2 
-#     c_control = (steering**2 + throttle**2 + brake**2 + throttle*brake)
-
-#     return (0.04*c_position + 0.002*c_speed + 0.0005*c_control)/TIME_STEPS_RATIO
 
 @jit
 def cost_1step(state, action, route, goal_speed = 8.):
@@ -144,8 +125,7 @@ def cost_1step(state, action, route, goal_speed = 8.):
     route has shape [W, N_x]
     '''
     global TIME_STEPS_RATIO
-    # R = jnp.diag(np.array([1., 1.]))
-    # cost_weights = jnp.diag(np.array([1., 1., 1.]))
+
 
     speed =np.sqrt(np.square(state[1]) + np.square(state[3]))
 
@@ -162,15 +142,7 @@ def cost_1step(state, action, route, goal_speed = 8.):
     # return (0.003*c_position + 0.00025*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~7 on init
     return (0.03*c_position + 0.00025*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~7 on init
     # return (0.6*c_position + 0.0025*c_speed + 0.04*c_control)/TIME_STEPS_RATIO #~7 on init
-
-# @jit
-# def cost_final(x, route): # x.shape:(5), u.shape(2)
-#     global TARGET_RATIO
-#     c_position = (x[0]-route[-1,0])**2 + (x[1]-route[-1,1])**2
-# #     c_position = 0
-#     c_speed = x[2]**2
-
-#     return (c_position/(TARGET_RATIO**2) + 0.0*c_speed)*1
+    # return 0.03*c_position
 
 @jit
 def cost_final(state, route): 
@@ -182,8 +154,8 @@ def cost_final(state, route):
     c_position = np.square(state[0]-route[-1,0]) + np.square(state[2]-route[-1,1])
     c_speed =np.sqrt(np.square(state[1]) + np.square(state[3]))
 
-    return (0.003*c_position/(TARGET_RATIO**2) + 0.*c_speed)*1
-    # return (c_position/(TARGET_RATIO**2) + 0.0*c_speed)*1
+    # return (0.003*c_position/(TARGET_RATIO**2) + 0.*c_speed)*1
+    return 0.06*(c_position/(TARGET_RATIO**2) + 0.0*c_speed)*1
 
 @jit
 def cost_trj(x_trj, u_trj, route):
@@ -264,7 +236,6 @@ def forward_pass(x_trj, u_trj, k_trj, K_trj):
     u_trj = np.arcsin(np.sin(u_trj))
     
     x_trj_new = np.empty_like(x_trj)
-    # x_trj_new = jax.ops.index_update(x_trj_new, jax.ops.index[0], x_trj[0])
     x_trj_new = x_trj_new.at[0].set(x_trj[0])
     u_trj_new = np.empty_like(u_trj)
     
@@ -279,11 +250,9 @@ def forward_pass_looper(i, input_):
     x_trj, u_trj, k_trj, K_trj, x_trj_new, u_trj_new = input_
     
     u_next = u_trj[i] + k_trj[i] + K_trj[i]@(x_trj_new[i] - x_trj[i])
-    # u_trj_new = jax.ops.index_update(u_trj_new, jax.ops.index[i], u_next)
     u_trj_new = u_trj_new.at[i].set(u_next)
 
     x_next = discrete_dynamics(x_trj_new[i], u_trj_new[i])
-    # x_trj_new = jax.ops.index_update(x_trj_new, jax.ops.index[i+1], x_next)
     x_trj_new = x_trj_new.at[i+1].set(x_next)
     
     return [x_trj, u_trj, k_trj, K_trj, x_trj_new, u_trj_new]
@@ -311,10 +280,8 @@ def backward_pass_looper(i, input_):
     Q_x, Q_u, Q_xx, Q_ux, Q_uu = Q_terms(l_x, l_u, l_xx, l_ux, l_uu, f_x, f_u, V_x, V_xx)
     Q_uu_regu = Q_uu + np.eye(N_U)*regu
     k, K = gains(Q_uu_regu, Q_u, Q_ux)
-    # k_trj = jax.ops.index_update(k_trj, jax.ops.index[n], k)
     k_trj = k_trj.at[n].set(k)
     
-    # K_trj = jax.ops.index_update(K_trj, jax.ops.index[n], K)
     K_trj = K_trj.at[n].set(K)
     V_x, V_xx = V_terms(Q_x, Q_u, Q_xx, Q_ux, Q_uu, K, k)
     expected_cost_redu += expected_cost_reduction(Q_u, Q_uu, k)
@@ -330,9 +297,6 @@ def run_ilqr_main(x0, u_trj, target):
     
     x_trj = rollout(x0, u_trj)
     cost_trace = np.zeros((max_iter+1))
-    # cost_trace = jax.ops.index_update(
-    #     np.zeros((max_iter+1)), jax.ops.index[0], cost_trj(x_trj, u_trj, target)
-    # )
     cost_trace = cost_trace.at[0].set(cost_trj(x_trj, u_trj, target))
 
     x_trj, u_trj, cost_trace, regu, target = lax.fori_loop(
@@ -369,9 +333,6 @@ def run_ilqr_looper(i, input_):
 def run_ilqr_true_func(input_):
     i, cost_trace, total_cost, x_trj, u_trj, x_trj_new, u_trj_new, regu = input_
     
-    # cost_trace = jax.ops.index_update(
-    #     cost_trace, jax.ops.index[i], total_cost 
-    # )
     cost_trace = cost_trace.at[i].set(total_cost)
     x_trj = x_trj_new
     u_trj = u_trj_new
@@ -383,9 +344,6 @@ def run_ilqr_true_func(input_):
 def run_ilqr_false_func(input_):
     i, cost_trace, x_trj, u_trj, regu = input_
     
-    # cost_trace = jax.ops.index_update(
-    #     cost_trace, jax.ops.index[i], cost_trace[i-1] 
-    # )
     cost_trace = cost_trace.at[i].set(cost_trace[i-1] )
 
     regu *= 2.0
@@ -410,13 +368,13 @@ TARGET_RATIO = FUTURE_WAYPOINTS_AS_STATE*dp/(6*np.pi) # TODO: decide if this sho
 
 
 def continuous_dynamics_np(t, state):
-    #state = [X, u, Y, v, PSI, r]
+    #state = [X, u, Y, v, PSI, r, steer, thrust]
     #action = [delta_f, F_x]
 
     #Carla Wheel Physics
     # friction coeff: 3.5, long_stiff: 3000.0, lat_stiff: 20.0, lat_stiff_max_load: 3.0
     # wheelbase: 3, track width: 1.67
-    Nw=2
+    Nw=2.
     f=0.01
     Iz=2667
     a=1.35
@@ -425,46 +383,51 @@ def continuous_dynamics_np(t, state):
     Cy=1.2
     Dy=0.7
     Ey=-1.6
-    Shy=0
-    Svy=0
-    m=1400
+    Shy=0.
+    Svy=0.
+    m=1400.
     g=9.806
 
     delta_f = state[6]
     F_x = state[7]
 
-    a_f = np.rad2deg(delta_f-np.arctan2(state[3] + a*state[5], state[1]))
-    a_r = np.rad2deg(-np.arctan2(state[3] - b*state[5], state[1]))
+    a_f = onp.rad2deg(delta_f-onp.arctan2(state[3] + a*state[5], state[1]))
+    a_r = onp.rad2deg(-onp.arctan2(state[3] - b*state[5], state[1]))
 
-    phi_yf=(1-Ey)*(a_f+Shy)+(Ey/By)*np.arctan(By*(a_f+Shy))
-    phi_yr=(1-Ey)*(a_r+Shy)+(Ey/By)*np.arctan(By*(a_r+Shy))
+    phi_yf=(1-Ey)*(a_f+Shy)+(Ey/By)*onp.arctan(By*(a_f+Shy))
+    phi_yr=(1-Ey)*(a_r+Shy)+(Ey/By)*onp.arctan(By*(a_r+Shy))
 
     F_zf=b/(a+b)*m*g
-    F_yf=F_zf*Dy*np.sin(Cy*np.arctan(By*phi_yf))+Svy
+    F_yf=F_zf*Dy*onp.sin(Cy*onp.arctan(By*phi_yf))+Svy
 
     F_zr=a/(a+b)*m*g
-    F_yr=F_zr*Dy*np.sin(Cy*np.arctan(By*phi_yr))+Svy
+    F_yr=F_zr*Dy*onp.sin(Cy*onp.arctan(By*phi_yr))+Svy
 
-    # F_total=np.sqrt((Nw*F_x)**2+(F_yr**2))
-    # F_max=0.7*m*g
-    # if F_total>F_max:
-    #     F_x=F_max/F_total*F_x
-    #     F_yr=F_max/F_total*F_yr
+    F_total=np.sqrt((Nw*F_x)**2+(F_yr**2))
+    F_max=0.7*m*g
+    if F_total>F_max:
+        F_x=F_max/F_total*F_x
+        F_yr=F_max/F_total*F_yr
 
 
-    dzdt = [state[1]*np.cos(state[4]) - state[3]*np.sin(state[4]), 
-            (-f*m*g+Nw*F_x-F_yf*np.sin(delta_f))/m+state[3]*state[5], 
-            state[1]*np.sin(state[4]) + state[3]*np.cos(state[4]), 
-            (F_yf*np.cos(delta_f) + F_yr) * np.reciprocal(m-state[1]*state[5]), 
+    dzdt = [state[1]*onp.cos(state[4]) - state[3]*onp.sin(state[4]), 
+            (-f*m*g+Nw*F_x-F_yf*onp.sin(delta_f))/m+state[3]*state[5], 
+            state[1]*onp.sin(state[4]) + state[3]*onp.cos(state[4]),    
+            (F_yf*onp.cos(delta_f) + F_yr)/m- state[1]*state[5], 
             state[5],
-            (F_yf*a*np.cos(delta_f)-F_yr*b)/Iz,
+            (F_yf*a*onp.cos(delta_f)-F_yr*b)/Iz,
             0, #Zero order hold input
             0] #Zero order hold input
     
-    return np.array(dzdt)
+    return onp.array(dzdt)
 
 def main(waypoints):
+    MPC_INTERVAL = 4
+    init_vector = waypoints[0,:] - waypoints[1,:]
+    init_yaw = np.arctan2(init_vector[1], init_vector[0])
+
     state = onp.zeros(6)
+    state[4] = init_yaw
     state = np.array(state)
 
 
@@ -479,32 +442,31 @@ def main(waypoints):
         state = np.array(state)
         
         # u_trj = np.random.randn(TIME_STEPS-1, N_U)
-        steer_sample = onp.random.randn(TIME_STEPS-1, 1) * 10
-        thrust_sample = onp.random.randn(TIME_STEPS-1, 1) * 1000 + 1000
+        steer_sample = onp.random.randn(TIME_STEPS-1, 1) * 0.2
+        thrust_sample = onp.random.randn(TIME_STEPS-1, 1) * 1000
         u_init = onp.hstack((steer_sample, thrust_sample))
         u_init = np.array(u_init)        
         waypoints = np.array(waypoints)
 
         x_trj, u_trj, cost_trace = run_ilqr_main(state, u_init, waypoints)
-        
-        # for j in range(MPC_INTERVAL):
-        steer = u_trj[0,0]
-        thrust = u_trj[0,1]
-        
-        action = onp.array([steer, thrust])
+        print(cost_trace)
+        for j in range(MPC_INTERVAL):
+            steer = u_trj[j,0]
+            thrust = u_trj[j,1]
+            
+            action = onp.array([steer, thrust])
 
-        actual_state = onp.array(state)
-        augmented_state = onp.hstack((actual_state, action))
+            actual_state = onp.array(state)
+            augmented_state = onp.hstack((actual_state, action))
 
-        sol = solve_ivp(continuous_dynamics_np, [0, DT_], augmented_state)
+            sol = solve_ivp(continuous_dynamics_np, [0, DT], augmented_state, atol= 1e-5, rtol = 1e-5)
 
-        state = sol.y[:6, -1]
-        print(sol.y[:,-1])
-        steers.append(steer)
-        thrusts.append(thrust)
-        x_trajectory.append(state[0])
-        y_trajectory.append(state[2])
-        time.append(time[-1]+DT_)
+            state = sol.y[:6, -1]
+            steers.append(steer)
+            thrusts.append(thrust)
+            x_trajectory.append(state[0])
+            y_trajectory.append(state[2])
+            time.append(time[-1]+DT)
 
     fig, ax = plt.subplots(3)
     ax[0].scatter(waypoints[:,0], waypoints[:,1], label = "Waypoints", color = "red")
@@ -516,6 +478,33 @@ def main(waypoints):
     plt.show()
 
 
+
+    # #Trying to get dynamics to match matlab    
+    # state = onp.zeros(8)
+    # state[1] = 8.9
+    # t = onp.linspace(0, 5, 500)
+    # dt = t[1]-t[0]
+    # steer = onp.pi/6*onp.ones_like(t)
+    # thrust = 1000*onp.ones_like(t)
+
+    # x_trajectory = [0]
+    # y_trajectory = [0]
+    # for idx, t in enumerate(t):
+    #     state[6] = steer[idx]
+    #     state[7] = thrust[idx]
+    #     sol = solve_ivp(continuous_dynamics_np, [t, t+dt], state)
+    #     print(sol.y)
+    #     state = sol.y[:, -1]
+    #     x_trajectory.append(state[0])
+    #     y_trajectory.append(state[2])
+    
+    # sol = solve_ivp(continuous_dynamics_np, [0, 5], state, atol= 1e-8, rtol = 1e-8)
+    
+    # fig, ax = plt.subplots()
+    # ax.plot(x_trajectory, y_trajectory, label = "Trajectory", color = "blue")
+    # # ax.plot(sol.y[0,:], sol.y[2,:], label = "Trajectory", color = "blue")
+
+    # plt.show()
 
 if __name__ == "__main__":
     waypoints = onp.array([[-48.674,  46.955],

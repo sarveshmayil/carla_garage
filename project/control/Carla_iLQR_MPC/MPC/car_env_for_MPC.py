@@ -71,7 +71,7 @@ START_TIME = 1
 
 DEBUG = True
 
-MPC_INTERVAL = 1
+MPC_INTERVAL = 3
 
 VIDEO_RECORD = False
 RES_X = 1920
@@ -112,7 +112,7 @@ def draw_planned_trj(world, x_trj, car_z, color=(255,0,0)):
     color = carla.Color(r=color[0],g=color[1],b=color[2],a=255)
     length = x_trj.shape[0]
     xx = x_trj[:,0]
-    yy = x_trj[:,1]
+    yy = x_trj[:,2]
     for i in range(1, length):
         begin = carla.Location(float(xx[i-1]), float(yy[i-1]), float(car_z+1))
         end = carla.Location(float(xx[i]), float(yy[i]), float(car_z+1))
