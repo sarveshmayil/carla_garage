@@ -31,7 +31,7 @@ class Agent(Vehicle):
             if not isinstance(v, str):
                 exec(f'self.model_config.{k} = {v}')
 
-            self._model = LidarCenterNet(self.model_config).to(self.device)
+        self._model = LidarCenterNet(self.model_config).to(self.device)
         self._model.eval()
         state_dict = torch.load(os.path.join(self.vehicle_config.model["dir"], self.vehicle_config.model["weights"]))
         self._model.load_state_dict(state_dict)
@@ -55,6 +55,7 @@ class Agent(Vehicle):
 
         i = 0
         target_wp = self.route[0]
+        veh_dist = self.dist(target_wp)
 
         lidar_buffer = np.empty((0,4))
         while True:
@@ -90,7 +91,7 @@ class Agent(Vehicle):
                 preds = self._model(out_data['rgb'].permute(0,3,1,2).to(self.device),
                                     torch.tensor(lidar_histogram).to(self.device),
                                     target_point=bev_waypoint, 
-                                    ego_vel=torch.tensor(ego_vel).unsqueeze(1).to(self.device))
+                                    ego_vel=torch.tensor(ego_vel).reshape(1,1).to(self.device))
                 
                 pred_wp = preds[0][0]
 
@@ -101,10 +102,12 @@ class Agent(Vehicle):
                         end = begin + carla.Location(z=2)
                         self._world.debug.draw_arrow(begin, end, arrow_size=0.3, life_time=0)
 
-            # Get and apply control initially
-            control = self._controller.get_control((preds[0][0][0], preds[1][0][0]))
-            self._vehicle.apply_control(control)
-            veh_dist = self.dist(target_wp)
+                # Get and apply control initially
+                next_wp = self.waypoint_to_bev(preds[0][0][0], inverse=True)
+                next_wp = carla.Transform(carla.Location(next_wp[0], next_wp[1], 0.0))
+                control = self._controller.get_control((target_speed, next_wp))
+                self._vehicle.apply_control(control)
+                veh_dist = self.dist(target_wp)
 
             # If vehicle has reached waypoint, move to next waypoint
             if(veh_dist < threshold):

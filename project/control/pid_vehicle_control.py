@@ -6,7 +6,7 @@ from agents.tools.misc import get_speed
 from .controller_base import BaseController
 from .pid import PID
 
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Union
 
 
 class PIDController(BaseController):
@@ -17,17 +17,19 @@ class PIDController(BaseController):
 
         self.last_steer_command = self._vehicle.get_control().steer
 
-    def get_control(self, input:Tuple[float,carla.Transform]) -> carla.VehicleControl:
+    def get_control(self, input:Tuple[float,Union[carla.Transform,carla.Waypoint]]) -> carla.VehicleControl:
         """
         Gets controls for vehicle based on input.
 
         Args:
-            input: Tuple of (target speed:float, waypoint:carla.Transform)
+            input: Tuple of (target speed:float, waypoint:carla.Transform/Waypoint)
 
         Returns:
             control: carla.VehicleControl instance
         """
         target_speed, waypoint = input
+        if isinstance(waypoint, carla.Waypoint):
+            waypoint = waypoint.transform
 
         control = carla.VehicleControl()
         current_speed = get_speed(self._vehicle)  # speed in kph
@@ -77,12 +79,11 @@ class PIDLateralController(PID):
 
         if self._offset != 0:
             # Displace the wp to the side
-            wp_tran = waypoint.transform
-            r_vec = wp_tran.get_right_vector()
-            wp_loc = wp_tran.location + carla.Location(x=self._offset*r_vec.x,
-                                                       y=self._offset*r_vec.y)
+            r_vec = waypoint.get_right_vector()
+            wp_loc = waypoint.location + carla.Location(x=self._offset*r_vec.x,
+                                                        y=self._offset*r_vec.y)
         else:
-            wp_loc = waypoint.transform.location
+            wp_loc = waypoint.location
 
         # difference between vehicle loc and waypoint
         wp_vec = np.array([wp_loc.x - veh_loc.x,
