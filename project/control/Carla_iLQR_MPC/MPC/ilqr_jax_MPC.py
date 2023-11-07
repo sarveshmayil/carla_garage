@@ -22,7 +22,6 @@ from car_env_for_MPC import *
 
 import os
 
-
 from jax.config import config
 # config.update("jax_debug_nans", True)
     # jax.config.update("jax_enable_x64", True)
@@ -164,16 +163,15 @@ def cost_1step(state, action, route, goal_speed = 8.):
     c_speed = jnp.square(speed-goal_speed)
     # c_control = jnp.square(action[0]/0.7)
     # c_control = jnp.square(action[1]/5000)
-    c_control = jnp.sqrt(jnp.square(action[0]/0.7) + jnp.square(action[1]/5000))
+    c_control = jnp.sqrt(jnp.square(action[0]/0.5) + jnp.square(action[1]/5000))
 
     # c_control = action[0]/0.5 + action[1]/500
     # return (0.*c_position + 0.0005*c_speed + 0.*c_control)/TIME_STEPS_RATIO #~2.3
     # return (.001*c_position + 0.*c_speed + 0.*c_control)/TIME_STEPS_RATIO #~1.29
     # return (0.*c_position + 0.*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~1.7
     # return (0.003*c_position + 0.00025*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~7 on init
-    # return (0.03*c_position + 0.0025*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~7 on init
+    return (0.03*c_position + 0.00025*c_speed + 0.025*c_control)/TIME_STEPS_RATIO #~7 on init
     # return (0.6*c_position + 0.0025*c_speed + 0.04*c_control)/TIME_STEPS_RATIO #~7 on init
-    return (0.04*c_position + 0.002*c_speed + 0.0005*c_control)/TIME_STEPS_RATIO
 
 
 @jit
@@ -186,8 +184,8 @@ def cost_final(state, route):
     c_position = jnp.square(state[0]-route[-1,0]) + jnp.square(state[2]-route[-1,1])
     c_speed =jnp.sqrt(jnp.square(state[1]) + jnp.square(state[3]))
 
-    # return (0.003*c_position/(TARGET_RATIO**2) + 0.*c_speed)*1
-    return (c_position/(TARGET_RATIO**2) + 0.0*c_speed)*1
+    return (0.003*c_position/(TARGET_RATIO**2) + 0.*c_speed)*1
+    # return (c_position/(TARGET_RATIO**2) + 0.0*c_speed)*1
 
 
 @jit
@@ -519,15 +517,16 @@ def run_ilqr_false_func(input_):
 env = CarEnv()
 for i in range(1):
     state, waypoints = env.reset()
+    print(waypoints)
     # total_time = 0
 
     for k in tqdm(range(2000)):
         # start = time.time()
         # state[2] += 0.01
         state = jnp.array(state)
-        
+        print(f'{state[0]}, {state[2]}')
         # u_trj = np.random.randn(TIME_STEPS-1, N_U)
-        steer_sample = np.random.randn(TIME_STEPS-1, 1) * 0.15
+        steer_sample = np.random.randn(TIME_STEPS-1, 1) * 0.03
         thrust_sample = np.random.randn(TIME_STEPS-1, 1) * 500 + 1000
         u_init = np.hstack((steer_sample, thrust_sample))
         u_init = jnp.array(u_init)        
@@ -540,7 +539,7 @@ for i in range(1):
         # x_trj, u_trj, cost_trace = run_ilqr_main(state, u_init, waypoints)
         x_trj, u_trj, cost_trace, all_cost_trace = run_ilqr_main(state, u_init, waypoints)
 
-        print(cost_trace)
+        # print(cost_trace)
         # print(all_cost_trace)
         # print(np.linalg.norm(u_trj - u_init))
         # end = time.time()
@@ -554,7 +553,7 @@ for i in range(1):
             steer = u_trj[j,0]
             thrust = u_trj[j,1]
 
-            steer = np.clip(steer, -1, 1) 
+            steer = np.clip(steer/1.2, -1, 1) 
             thrust = np.clip(thrust/3000, -1, 1)
             
             if thrust < 0:
