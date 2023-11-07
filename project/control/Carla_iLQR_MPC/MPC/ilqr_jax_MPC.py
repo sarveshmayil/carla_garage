@@ -99,7 +99,7 @@ def continuous_dynamics(state, action):
     dzdt = [state[1]*jnp.cos(state[4]) - state[3]*jnp.sin(state[4]), 
             (-f*m*g+Nw*F_x-F_yf*jnp.sin(delta_f))/m+state[3]*state[5], 
             state[1]*jnp.sin(state[4]) + state[3]*jnp.cos(state[4]), 
-            (F_yf*jnp.cos(delta_f) + F_yr) * jnp.reciprocal(m-state[1]*state[5]), 
+            (F_yf*jnp.cos(delta_f) + F_yr)/m -state[1]*state[5], 
             state[5],
             (F_yf*a*jnp.cos(delta_f)-F_yr*b)/Iz]
     
@@ -526,7 +526,7 @@ for i in range(1):
         state = jnp.array(state)
         print(f'{state[0]}, {state[2]}')
         # u_trj = np.random.randn(TIME_STEPS-1, N_U)
-        steer_sample = np.random.randn(TIME_STEPS-1, 1) * 0.03
+        steer_sample = np.random.randn(TIME_STEPS-1, 1) * 0.2
         thrust_sample = np.random.randn(TIME_STEPS-1, 1) * 500 + 1000
         u_init = np.hstack((steer_sample, thrust_sample))
         u_init = jnp.array(u_init)        
@@ -546,7 +546,10 @@ for i in range(1):
         # if k > 1:
         #     total_time += end - start
         
-        # draw_planned_trj(env.world, np.array(x_trj), env.location_[2], color=(0, 223, 222))
+        
+
+        print(np.array(x_trj))
+        draw_planned_trj(env.world, np.array(x_trj), env.location_[2], color=(0, 223, 222))
 
         
         for j in range(MPC_INTERVAL):
