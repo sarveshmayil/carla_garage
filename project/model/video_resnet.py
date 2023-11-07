@@ -2,7 +2,7 @@
 
 from torch import nn
 from torchvision.models.video import r2plus1d_18
-import transfuser_utils as t_u
+import utils.transfuser_utils as t_u
 
 
 class VideoResNet(nn.Module):

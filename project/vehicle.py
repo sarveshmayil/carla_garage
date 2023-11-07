@@ -12,9 +12,8 @@ from control.controller_base import BaseController
 from control.pid_vehicle_control import PIDController
 from utils.misc import draw_waypoints
 from utils.lidar import *
-from model import LidarCenterNet
-from center_net import LidarCenterNetHead
-from leaderboard.leaderboard.envs.sensor_interface import CallBack, SensorInterface
+from model.model import LidarCenterNet
+from leaderboard.envs.sensor_interface import CallBack, SensorInterface
 from GlobalConfig import GlobalConfig
 
 from typing import Tuple, Union, Optional, Dict

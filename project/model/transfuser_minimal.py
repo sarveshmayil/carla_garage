@@ -42,13 +42,13 @@ class TransfuserBackbone(nn.Module):
 
     self.lidar_channel_to_img = nn.ModuleList([
         nn.Conv2d(self.lidar_encoder.feature_info.info[0]['num_chs'],
-                self.image_encoder.feature_info.info[0]['num_chs'],
-                kernel_size=1) for i in range(4)
+                  self.image_encoder.feature_info.info[0]['num_chs'],
+                  kernel_size=1) for i in range(4)
     ])
     self.img_channel_to_lidar = nn.ModuleList([
         nn.Conv2d(self.image_encoder.feature_info.info[0]['num_chs'],
-                self.lidar_encoder.feature_info.info[0]['num_chs'],
-                kernel_size=1) for i in range(4)
+                  self.lidar_encoder.feature_info.info[0]['num_chs'],
+                  kernel_size=1) for i in range(4)
     ])
 
     self.num_image_features = self.image_encoder.feature_info.info[3]['num_chs']
@@ -157,9 +157,11 @@ class GPT(nn.Module):
 
     # positional embedding parameter (learnable), image + lidar
     self.pos_emb = nn.Parameter(
-        torch.zeros(
-            1, self.seq_len * self.config.img_vert_anchors * self.config.img_horz_anchors +
-            lidar_time_frames * self.config.lidar_vert_anchors * self.config.lidar_horz_anchors, self.n_embd)).to(self.config.device)
+      torch.zeros(
+        1, self.seq_len * self.config.img_vert_anchors * self.config.img_horz_anchors +
+        lidar_time_frames * self.config.lidar_vert_anchors * self.config.lidar_horz_anchors, self.n_embd
+      )
+    ).to(self.config.device)
 
     # transformer
     self.blocks = nn.Sequential(*[
@@ -196,8 +198,6 @@ class GPT(nn.Module):
     assert self.seq_len == 1
     image_tensor = image_tensor.permute(0, 2, 3, 1).contiguous().view(bz, -1, self.n_embd)
     lidar_tensor = lidar_tensor.permute(0, 2, 3, 1).contiguous().view(bz, -1, self.n_embd)
-
-    token_embeddings = torch.cat((image_tensor, lidar_tensor), dim=1)
 
     x = self.blocks(x)  # (B, an * T, C)
     x = self.ln_f(x)  # (B, an * T, C)

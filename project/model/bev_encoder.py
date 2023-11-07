@@ -9,7 +9,7 @@ import torch.nn.functional as F
 import timm
 from video_swin_transformer import SwinTransformer3D
 from video_resnet import VideoResNet
-import transfuser_utils as t_u
+import utils.transfuser_utils as t_u
 
 
 class BevEncoder(nn.Module):

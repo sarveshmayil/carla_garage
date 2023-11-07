@@ -1,14 +1,14 @@
 """
 The main model structure
 """
-import transfuser_utils as t_u
-from focal_loss import FocalLoss
+import utils.transfuser_utils as t_u
+from utils.focal_loss import FocalLoss
 import numpy as np
 from pathlib import Path
 from transfuser import TransfuserBackbone, TransformerDecoderLayerWithAttention, TransformerDecoderWithAttention
 from bev_encoder import BevEncoder
 from aim import AIMBackbone
-from data import CARLA_Data
+from .data import CARLA_Data
 from center_net import LidarCenterNetHead
 import cv2
 

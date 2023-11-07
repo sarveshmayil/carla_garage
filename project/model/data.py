@@ -14,11 +14,11 @@ import cv2
 import gzip
 import laspy
 import io
-import transfuser_utils as t_u
-import gaussian_target as g_t
+import utils.transfuser_utils as t_u
+import utils.gaussian_target as g_t
 import random
 from sklearn.utils.class_weight import compute_class_weight
-from center_net import angle2class
+from model.center_net import angle2class
 from imgaug import augmenters as ia
 
 

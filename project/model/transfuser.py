@@ -8,7 +8,7 @@ from torch import nn
 import torch.nn.functional as F
 import timm
 from video_swin_transformer import SwinTransformer3D
-import transfuser_utils as t_u
+import utils.transfuser_utils as t_u
 from video_resnet import VideoResNet
 import copy
 
