@@ -53,10 +53,11 @@ class Agent(Vehicle):
         
         n_wps = len(self.route)
 
-        i = 0
-        target_wp = self.route[0]
+        i = 3
+        j = 0
+        target_wp = self.route[i]
         veh_dist = self.dist(target_wp)
-
+        small_waypoints = np.repeat(np.array([self._vehicle.get_transform().location.x, self._vehicle.get_transform().location.y])[None,:], 8, axis=0)
         lidar_buffer = np.empty((0,4))
         while True:
             self._world.tick()
@@ -76,43 +77,56 @@ class Agent(Vehicle):
             out_data = self.data_tick(data_dict)
             cv2.imshow("camera", data_dict['rgb_front'][1])
             cv2.waitKey(1)
+
+
             
             # Handling of lidar buffer, display
             lidar_buffer = np.vstack((lidar_buffer, out_data['lidar']))
             if lidar_buffer.shape[0] >= self.vehicle_config.lidar['buffer_threshold']:
                 lidar_bev = lidar_to_bev(lidar_buffer, ranges=[(0,32), (-16,16), (-2,10)], res=0.125, visualize=True)
-                lidar_histogram = lidar_to_histogram_features(lidar_buffer, self.model_config)[None,:]
+                lidar_histogram = lidar_to_histogram_features(lidar_buffer[:,:3], self.model_config)[None,:]
                 lidar_buffer = np.empty((0,4))
 
-                ego_vel = get_speed(self._vehicle)
+                cv2.imshow("histogram",lidar_histogram[0][0])
+                cv2.waitKey(1)
                 
-                waypoint = np.array([target_wp.transform.location.x, target_wp.transform.location.y, target_wp.transform.location.z])
-                bev_waypoint = self.waypoint_to_bev(waypoint)
-                preds = self._model(out_data['rgb'].permute(0,3,1,2).to(self.device),
-                                    torch.tensor(lidar_histogram).to(self.device),
-                                    target_point=bev_waypoint, 
-                                    ego_vel=torch.tensor(ego_vel).reshape(1,1).to(self.device))
                 
-                pred_wp = preds[0][0]
+                if self.dist_numpy(small_waypoints[j]) < threshold: #replan
+                    j = 1
+                    
+                    ego_vel = get_speed(self._vehicle)
+                    freeze_vehicle_transform = self._vehicle.get_transform()
+                    
+                    waypoint = np.array([target_wp.transform.location.x, target_wp.transform.location.y, target_wp.transform.location.z])
+                    bev_waypoint = self.waypoint_to_bev(waypoint, freeze_vehicle_transform)
+                    preds = self._model(out_data['rgb'].permute(0,3,1,2).to(self.device),
+                                        torch.tensor(lidar_histogram).to(self.device),
+                                        target_point=bev_waypoint, 
+                                        ego_vel=torch.tensor(ego_vel).reshape(1,1).to(self.device))
+                    pred_wp = preds[0][0]
+                    for ind, wp in enumerate(pred_wp):
+                            small_waypoints[ind] = self.waypoint_to_bev(wp, freeze_vehicle_transform, inverse=True)
 
-                if visualize:
-                    for wp in pred_wp:
-                        world_wp = self.waypoint_to_bev(wp, inverse=True)
-                        begin = carla.Location(x=world_wp[0], y=world_wp[1])
-                        end = begin + carla.Location(z=2)
-                        self._world.debug.draw_arrow(begin, end, arrow_size=0.3, life_time=0)
+                    if visualize:
+                        for ind in range(small_waypoints.shape[0]):
+                            begin = carla.Location(x=float(small_waypoints[ind][0]), y=float(small_waypoints[ind][1]))
+                            end = begin + carla.Location(z=2)
+                            self._world.debug.draw_arrow(begin, end, arrow_size=0.3, life_time=0)
+                # elif self.dist_numpy(small_waypoints[j]) < threshold:
+                #     j = min(7, j + 2)
 
-                # Get and apply control initially
-                next_wp = self.waypoint_to_bev(preds[0][0][0], inverse=True)
-                next_wp = carla.Transform(carla.Location(next_wp[0], next_wp[1], 0.0))
-                control = self._controller.get_control((target_speed, next_wp))
-                self._vehicle.apply_control(control)
-                veh_dist = self.dist(target_wp)
 
+            # Get and apply control initially
+            next_wp = small_waypoints[j]
+            next_wp = carla.Transform(carla.Location(float(next_wp[0]), float(next_wp[1]), 0.0))
+            control = self._controller.get_control((target_speed, next_wp))
+            self._vehicle.apply_control(control)
+
+            veh_dist = self.dist(target_wp)
             # If vehicle has reached waypoint, move to next waypoint
             if(veh_dist < threshold):
-                control = self._controller.get_control((target_speed, target_wp))
-                self._vehicle.apply_control(control)
+                #control = self._controller.get_control((target_speed, next_wp))
+                #self._vehicle.apply_control(control)
                 i += 1
 
                 # Break once reaching last checkpoint

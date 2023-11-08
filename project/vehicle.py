@@ -11,7 +11,7 @@ from control.controller_base import BaseController
 from control.pid_vehicle_control import PIDController
 from utils.misc import draw_waypoints
 from utils.lidar import *
-from leaderboard.envs.sensor_interface import CallBack, SensorInterface
+from leaderboard.leaderboard.envs.sensor_interface import CallBack, SensorInterface
 
 from typing import Tuple, Union, Optional, Dict
 
@@ -146,6 +146,11 @@ class Vehicle():
         dist = sqrt((target.transform.location.x - vehicle_loc.x)**2 + (target.transform.location.y - vehicle_loc.y)**2)
         return dist
 
+    def dist_numpy(self, target) -> float:
+        vehicle_loc = self.location
+        dist = sqrt((target[0] - vehicle_loc.x)**2 + (target[1] - vehicle_loc.y)**2)
+        return dist
+
     def set_controller_pid(self, lat_args:Dict[str, float]=None, long_args:Dict[str, float]=None):
         if lat_args is None:
             args_lateral_dict = self.vehicle_config.pid["lateral"]
@@ -171,26 +176,26 @@ class Vehicle():
             start = self.location
         self.route = [wp[0] for wp in self._planner.trace_route(start, target)]
 
-    def waypoint_to_bev(self, waypoint, inverse=False):
+    def waypoint_to_bev(self, waypoint, vehicle_transform, inverse=False):
         '''
         in: numpy [3,] in world frame
         out: torch [2,] (x,y) in bev frame
         '''
         out = waypoint[:2]
-        yaw = np.deg2rad(self._vehicle.get_transform().rotation.yaw)
-        vehicle_pos = [self._vehicle.get_transform().location.x, self._vehicle.get_transform().location.y]
+        yaw = -np.deg2rad(vehicle_transform.rotation.yaw)
+        vehicle_pos = [vehicle_transform.location.x, vehicle_transform.location.y]
         rotation_matrix = np.array([[np.cos(yaw), -np.sin(yaw)],
                                     [np.sin(yaw),  np.cos(yaw)]])   
         if not inverse:
             out = rotation_matrix @ (out - vehicle_pos).T
-            out[0] = -out[0]
             out = torch.tensor(out).to(self.device).to(torch.float32)
         else:
             out = out.detach().cpu().numpy()
-            out[0] = -out[0]
             out = np.linalg.inv(rotation_matrix) @ out + vehicle_pos
 
         return out
+
+
     
     def follow_route(self, target_speed=30.0, threshold=3.5, visualize=False):
         """

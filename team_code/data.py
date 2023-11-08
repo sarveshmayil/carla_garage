@@ -892,6 +892,9 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
       # (x height channel, y width channel)
       return overhead_splat.T
 
+    mask = np.logical_and(np.logical_and(lidar[:,0] > 32, lidar[:,1] > 16), lidar[:,1] < -16)
+    lidar = lidar[mask,:]
+
     # Remove points above the vehicle
     lidar = lidar[lidar[..., 2] < self.config.max_height_lidar]
     below = lidar[lidar[..., 2] <= self.config.lidar_split_height]
