@@ -9,7 +9,7 @@ class Config:
         self.cameras = [
             {
                 "type": 'sensor.camera.rgb',
-                "position": [-1.5, 0.0, 2.0],  # [x y z] position wrt car
+                "position": [1.5, 0.0, 2.0],  # [x y z] position wrt car
                 "rotation": [0.0, 0.0, 0.0],   # [r p y]
                 "size": [640, 480],            # [w h] of image
                 "fov": 110,
@@ -641,5 +641,23 @@ class GlobalConfig:
 
     if setting == 'all':
       self.val_data.append(self.train_data[0])  # Dummy
+
+  def use_our_own_config(self):
+    our_config = Config()
+    self.lidar_pos = our_config.lidar["position"]  # x, y, z mounting position of the LiDAR
+    self.lidar_rot = our_config.lidar["rotation"]  # Roll Pitch Yaw of LiDAR in degree
+    self.lidar_rotation_frequency = our_config.lidar["rot_freq"]  # Number of Hz at which the Lidar operates
+    # Number of points the LiDAR generates per second.
+    # Change in proportion to the rotation frequency.
+    self.lidar_points_per_second = our_config.lidar["points_per_sec"]
+    self.lidar_split_height = -2
+
+    self.camera_pos = our_config.cameras[0]["position"]  # x, y, z mounting position of the camera
+    self.camera_rot_0 = our_config.cameras[0]["rotation"]  # Roll Pitch Yaw of camera 0 in degree
+
+    # Therefore their size is smaller
+    self.camera_width = our_config.cameras[0]["size"][0]  # Camera width in pixel during data collection
+    self.camera_height = our_config.cameras[0]["size"][1]  # Camera height in pixel during data collection
+    self.camera_fov = our_config.cameras[0]["fov"]
 
 

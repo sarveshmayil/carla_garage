@@ -7,7 +7,7 @@ import torch
 import cv2
 
 from vehicle import Vehicle
-from GlobalConfig import GlobalConfig
+from config import GlobalConfig
 from model.tf_model import LidarCenterNet
 from utils.misc import draw_waypoints
 from utils.lidar import *
@@ -30,6 +30,8 @@ class Agent(Vehicle):
         for k, v in args.items():
             if not isinstance(v, str):
                 exec(f'self.model_config.{k} = {v}')
+        
+        self.model_config.use_our_own_config()
 
         self._model = LidarCenterNet(self.model_config).to(self.device)
         self._model.eval()
