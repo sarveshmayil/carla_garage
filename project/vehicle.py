@@ -11,7 +11,7 @@ from control.controller_base import BaseController
 from control.pid_vehicle_control import PIDController
 from utils.misc import draw_waypoints
 from utils.lidar import *
-from leaderboard.leaderboard.envs.sensor_interface import CallBack, SensorInterface
+from leaderboard.envs.sensor_interface import CallBack, SensorInterface
 
 from typing import Tuple, Union, Optional, Dict
 
@@ -132,23 +132,31 @@ class Vehicle():
             sensor.listen(CallBack(sensor_spec['id'], sensor_spec['type'], sensor, self._sensor_interface))
             self._sensors[sensor_spec['id']] = sensor
 
-    def dist(self, target) -> float:
+    def dist(self, target:Union[np.ndarray,carla.Waypoint,carla.Transform,carla.Location]) -> float:
         """
         Determines distance between vehicle and target location.
 
         Args:
-            target: target location
+            target: target location of type Union[np.ndarray,carla.Waypoint,carla.Transform,carla.Location]
 
         Returns:
             distance to target [m]
         """
-        vehicle_loc = self.location
-        dist = sqrt((target.transform.location.x - vehicle_loc.x)**2 + (target.transform.location.y - vehicle_loc.y)**2)
-        return dist
+        if isinstance(target, carla.Waypoint):
+            target_loc = target.transform.location
+            target_loc = np.array([target_loc.x, target_loc.y])
+        elif isinstance(target, carla.Transform):
+            target_loc = target.location
+            target_loc = np.array([target_loc.x, target_loc.y])
+        elif isinstance(target, carla.Location):
+            target_loc = np.array([target.x, target.y])
+        elif isinstance(target, np.ndarray):
+            target_loc = target[:2]
+        else:
+            raise ValueError("target must be of type [np.ndarray,carla.Waypoint,carla.Transform,carla.Location]")
 
-    def dist_numpy(self, target) -> float:
         vehicle_loc = self.location
-        dist = sqrt((target[0] - vehicle_loc.x)**2 + (target[1] - vehicle_loc.y)**2)
+        dist = sqrt((target_loc[0] - vehicle_loc.x)**2 + (target_loc[1] - vehicle_loc.y)**2)
         return dist
 
     def set_controller_pid(self, lat_args:Dict[str, float]=None, long_args:Dict[str, float]=None):
@@ -176,26 +184,37 @@ class Vehicle():
             start = self.location
         self.route = [wp[0] for wp in self._planner.trace_route(start, target)]
 
-    def waypoint_to_bev(self, waypoint, vehicle_transform, inverse=False):
+    def waypoint_to_bev(self, waypoint:np.ndarray, vehicle_transform:carla.Transform, inverse:bool=False):
         '''
-        in: numpy [3,] in world frame
-        out: torch [2,] (x,y) in bev frame
+        Args:
+            waypoint: numpy array with [x,y,...] coordinates in world/BEV frame
+            vehicle_transform: vehicle's transform
+            inverse: True=world->BEV ; False=BEV->world
+        
+        Returns:
+            coordinates in world/BEV frame
+                if inverse: return type np.ndarray
+                otherwise: return type torch Tensor
         '''
-        out = waypoint[:2]
+        ndim = waypoint.ndim
+        if ndim == 1:
+            waypoint = np.expand_dims(waypoint, 0)
+        out = waypoint[:,:2]
         yaw = -np.deg2rad(vehicle_transform.rotation.yaw)
-        vehicle_pos = [vehicle_transform.location.x, vehicle_transform.location.y]
+        vehicle_pos = np.array([vehicle_transform.location.x, vehicle_transform.location.y])
         rotation_matrix = np.array([[np.cos(yaw), -np.sin(yaw)],
                                     [np.sin(yaw),  np.cos(yaw)]])   
         if not inverse:
-            out = rotation_matrix @ (out - vehicle_pos).T
+            out = (rotation_matrix @ (out - vehicle_pos).T).T
             out = torch.tensor(out).to(self.device).to(torch.float32)
         else:
             out = out.detach().cpu().numpy()
-            out = np.linalg.inv(rotation_matrix) @ out + vehicle_pos
+            out = (np.linalg.inv(rotation_matrix) @ out.T).T + vehicle_pos
+
+        if ndim == 1:
+            out = out[0]
 
         return out
-
-
     
     def follow_route(self, target_speed=30.0, threshold=3.5, visualize=False):
         """
@@ -217,7 +236,6 @@ class Vehicle():
         i = 0
         target_wp = self.route[0]
 
-        lidar_buffer = np.empty((0,4))
         while True:
             self._world.tick()
 
@@ -235,18 +253,6 @@ class Vehicle():
             control = self._controller.get_control((target_speed, target_wp))
             self._vehicle.apply_control(control)
             veh_dist = self.dist(target_wp)
-            
-            # Collect data and post-process
-            data_dict = self._sensor_interface.get_data()
-            out_data = self.data_tick(data_dict)
-            cv2.imshow("camera", data_dict['rgb_front'][1])
-            cv2.waitKey(1)
-            
-            # Handling of lidar buffer, display
-            lidar_buffer = np.vstack((lidar_buffer, out_data['lidar']))
-            if lidar_buffer.shape[0] >= self.vehicle_config.lidar['buffer_threshold']:
-                lidar_bev = lidar_to_bev(lidar_buffer, ranges=[(0,32), (-16,16), (-2,10)], res=0.125, visualize=True)
-                lidar_buffer = np.empty((0,4))
 
             # If vehicle has reached waypoint, move to next waypoint
             if(veh_dist < threshold):
@@ -287,12 +293,13 @@ class Vehicle():
                 # # Switch to pytorch channel first order
                 # rgb_pos = np.transpose(rgb_pos, (2, 0, 1))
                 # rgb.append(rgb_pos)
+                image = np.transpose(image, (2,0,1))
                 rgb.append(image)
             elif id.startswith('lidar'):
                 lidar_points = lidar_to_ego_coordinates(data_dict[id],
-                                                       lidar_pos=self.vehicle_config.lidar['position'],
-                                                       lidar_rot=self.vehicle_config.lidar['rotation'],
-                                                       intensity=True)
+                                                        lidar_pos=self.vehicle_config.lidar['position'],
+                                                        lidar_rot=self.vehicle_config.lidar['rotation'],
+                                                        intensity=True)
                 # intensity = lidar_points[:,-1]
                 # intensity_col = 1.0 - np.log(intensity) / np.log(np.exp(-0.004 * 85))
                 # int_color = np.c_[
