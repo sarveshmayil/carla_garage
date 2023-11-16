@@ -14,11 +14,11 @@ import cv2
 import gzip
 import laspy
 import io
-import transfuser_utils as t_u
-import gaussian_target as g_t
+import model.utils.transfuser_utils as t_u
+import model.utils.gaussian_target as g_t
 import random
 from sklearn.utils.class_weight import compute_class_weight
-from center_net import angle2class
+from model.center_net import angle2class
 from imgaug import augmenters as ia
 
 
@@ -891,9 +891,6 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
       # Comes from the fact that carla is x front, y right, whereas the image is y front, x right
       # (x height channel, y width channel)
       return overhead_splat.T
-
-    mask = np.logical_and(np.logical_and(lidar[:,0] > 32, lidar[:,1] > 16), lidar[:,1] < -16)
-    lidar = lidar[mask,:]
 
     # Remove points above the vehicle
     lidar = lidar[lidar[..., 2] < self.config.max_height_lidar]
