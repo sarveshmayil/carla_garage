@@ -216,7 +216,7 @@ class Vehicle():
 
         return out
     
-    def follow_route(self, target_speed=30.0, threshold=3.5, visualize=False):
+    def follow_route(self, target_speed=30.0, threshold=3.5, visualize=False, debug=False):
         """
         Function to use controller to follow a route.
 
@@ -239,7 +239,7 @@ class Vehicle():
         while True:
             self._world.tick()
 
-            if visualize:
+            if debug:
                 draw_waypoints(self._world, [target_wp])
 
             # Offset spectator camera to follow car

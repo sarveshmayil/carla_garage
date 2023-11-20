@@ -43,11 +43,13 @@ class Config:
         }
 
         self.model = {
-          "dir": os.path.join(file_dir, "..", "pretrained_models", "leaderboard", "tfpp_wp_all_0"),
+          "dir": os.path.join(file_dir, "..", "pretrained_models", "longest6", "tfpp_all_0"),
           "args": "args.txt",
           "config": "config.pickle",
           "weights": "model_0030.pth"
         }
+
+        self.use_target_speed_uncertainty = True
 
 """
 Config class that contains all the hyperparameters needed to build any model.
@@ -659,5 +661,7 @@ class GlobalConfig:
     self.camera_width = our_config.cameras[0]["size"][0]  # Camera width in pixel during data collection
     self.camera_height = our_config.cameras[0]["size"][1]  # Camera height in pixel during data collection
     self.camera_fov = our_config.cameras[0]["fov"]
+
+    self.use_target_speed_uncertainty = our_config.use_target_speed_uncertainty
 
 
