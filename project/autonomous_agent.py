@@ -4,11 +4,12 @@ import json
 import pickle
 import numpy as np
 import torch
+import torch.nn.functional as F
 import cv2
 
 from vehicle import Vehicle
 from config import GlobalConfig
-from model.tf_model import LidarCenterNet
+from model.tf_model_minimal import LidarCenterNet
 from utils.misc import draw_waypoints
 from utils.lidar import *
 from agents.tools.misc import get_speed
@@ -34,11 +35,16 @@ class Agent(Vehicle):
         self.model_config.use_our_own_config()
 
         self._model = LidarCenterNet(self.model_config).to(self.device)
+        if self.model_config.sync_batch_norm:
+          # Model was trained with Sync. Batch Norm.
+          # Need to convert it otherwise parameters will load wrong.
+          net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
         self._model.eval()
-        state_dict = torch.load(os.path.join(self.vehicle_config.model["dir"], self.vehicle_config.model["weights"]))
-        self._model.load_state_dict(state_dict)
+        state_dict = torch.load(os.path.join(self.vehicle_config.model["dir"], self.vehicle_config.model["weights"]), map_location=self.device)
+        self._model.load_state_dict(state_dict, strict=False)
 
-    def follow_route(self, target_speed=30.0, threshold=3.5, visualize=False):
+    @torch.inference_mode()
+    def follow_route(self, tp_threshold=5.0, wp_threshold=7.0, visualize=False, debug=False):
         """
         Function to use controller to follow a route.
 
@@ -60,12 +66,15 @@ class Agent(Vehicle):
         target_wp = self.route[tp_idx]
         veh_dist = self.dist(target_wp)
         small_waypoints = np.repeat(np.array([self._vehicle.get_transform().location.x, self._vehicle.get_transform().location.y])[None,:], 8, axis=0)
+        pred_target_speed = 0.0
         lidar_buffer = np.empty((0,4))
 
-        while True:
+        finished = False
+
+        while not finished:
             self._world.tick()
 
-            if visualize:
+            if debug:
                 draw_waypoints(self._world, [target_wp])
             
             # Offset spectator camera to follow car
@@ -93,7 +102,7 @@ class Agent(Vehicle):
                     cv2.imshow("histogram", lidar_histogram[0])
                     cv2.waitKey(1)
                 
-                if self.dist(small_waypoints[small_wp_idx]) < threshold: #replan                    
+                if self.dist(small_waypoints[small_wp_idx]) < wp_threshold: #replan                    
                     ego_vel = get_speed(self._vehicle)
                     freeze_vehicle_transform = self._vehicle.get_transform()
                     
@@ -103,11 +112,23 @@ class Agent(Vehicle):
                                         torch.tensor(lidar_histogram).unsqueeze(0).to(self.device),
                                         target_point=bev_waypoint, 
                                         ego_vel=torch.tensor(ego_vel).reshape(1,1).to(self.device))
-                    pred_wp = preds[0][0]
+                    
+                    pred_wp = preds[2][0]
+                    target_speed_uncertainty = F.softmax(preds[1][0], dim=0)
+
+                    if self.model_config.use_target_speed_uncertainty:
+                        uncertainty = target_speed_uncertainty.detach().cpu().numpy()
+                        if uncertainty[0] > self.model_config.brake_uncertainty_threshold:
+                            pred_target_speed = self.model_config.target_speeds[0]
+                        else:
+                            pred_target_speed = sum(uncertainty * self.model_config.target_speeds)
+                    else:
+                        pred_target_speed_index = torch.argmax(target_speed_uncertainty)
+                        pred_target_speed = self.model_config.target_speeds[pred_target_speed_index]
 
                     small_waypoints = self.waypoint_to_bev(pred_wp, freeze_vehicle_transform, inverse=True)
 
-                    if visualize:
+                    if debug:
                         for ind in range(small_waypoints.shape[0]):
                             point = carla.Location(x=float(small_waypoints[ind][0]), y=float(small_waypoints[ind][1]), z=1)
                             self._world.debug.draw_point(point, size=0.2, life_time=1.0)
@@ -115,17 +136,17 @@ class Agent(Vehicle):
             # Get and apply control initially
             next_wp = small_waypoints[small_wp_idx]
             next_wp = carla.Transform(carla.Location(float(next_wp[0]), float(next_wp[1]), 0.0))
-            control = self._controller.get_control((target_speed, next_wp))
+            control = self._controller.get_control((pred_target_speed*3.6, next_wp))  # multiply by 3.6 to go from m/s to km/h
             self._vehicle.apply_control(control)
 
             veh_dist = self.dist(target_wp)
             # If vehicle has reached waypoint, move to next waypoint
-            if(veh_dist < threshold):
+            if(veh_dist < tp_threshold):
                 tp_idx += 1
 
                 # Break once reaching last checkpoint
                 if (tp_idx == n_wps):
-                    break
+                    finished = True
                 else:
                     target_wp = self.route[tp_idx]
 

@@ -28,4 +28,5 @@ if __name__ == "__main__":
     vehicle.set_controller_pid()
     vehicle.planner = GlobalRoutePlanner(wmap, sampling_resolution=10)
     vehicle.set_route(start=a, target=b)
-    vehicle.follow_route(target_speed=30, threshold=5, visualize=True)
+    # vehicle.follow_route(target_speed=30, visualize=True, debug=True)  # For Vehicle
+    vehicle.follow_route(visualize=True, debug=True)  # For Agent
