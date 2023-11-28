@@ -9,7 +9,7 @@ import cv2
 
 from vehicle import Vehicle
 from config import GlobalConfig
-from model.tf_model import LidarCenterNet
+from model.tf_model_minimal import LidarCenterNet
 from utils.misc import draw_waypoints
 from utils.lidar import *
 from agents.tools.misc import get_speed
@@ -44,7 +44,7 @@ class Agent(Vehicle):
         self._model.load_state_dict(state_dict, strict=False)
 
     @torch.inference_mode()
-    def follow_route(self, target_speed=30.0, threshold=3.5, visualize=False, debug=False):
+    def follow_route(self, tp_threshold=5.0, wp_threshold=7.0, visualize=False, debug=False):
         """
         Function to use controller to follow a route.
 
@@ -69,7 +69,9 @@ class Agent(Vehicle):
         pred_target_speed = 0.0
         lidar_buffer = np.empty((0,4))
 
-        while True:
+        finished = False
+
+        while not finished:
             self._world.tick()
 
             if debug:
@@ -100,7 +102,7 @@ class Agent(Vehicle):
                     cv2.imshow("histogram", lidar_histogram[0])
                     cv2.waitKey(1)
                 
-                if self.dist(small_waypoints[small_wp_idx+2]) < threshold: #replan                    
+                if self.dist(small_waypoints[small_wp_idx]) < wp_threshold: #replan                    
                     ego_vel = get_speed(self._vehicle)
                     freeze_vehicle_transform = self._vehicle.get_transform()
                     
@@ -139,12 +141,12 @@ class Agent(Vehicle):
 
             veh_dist = self.dist(target_wp)
             # If vehicle has reached waypoint, move to next waypoint
-            if(veh_dist < threshold):
+            if(veh_dist < tp_threshold):
                 tp_idx += 1
 
                 # Break once reaching last checkpoint
                 if (tp_idx == n_wps):
-                    break
+                    finished = True
                 else:
                     target_wp = self.route[tp_idx]
 

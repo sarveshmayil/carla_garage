@@ -11,7 +11,7 @@ class Config:
                 "type": 'sensor.camera.rgb',
                 "position": [1.5, 0.0, 2.0],  # [x y z] position wrt car
                 "rotation": [0.0, 0.0, 0.0],   # [r p y]
-                "size": [640, 480],            # [w h] of image
+                "size": [1024, 256],            # [w h] of image
                 "fov": 110,
                 "id": 'rgb_front'
             }
