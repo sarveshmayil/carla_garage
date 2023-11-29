@@ -18,7 +18,7 @@ from typing import Optional
 
 
 class Agent(Vehicle):
-    def __init__(self, world:carla.World,  vehicle:Optional[carla.Actor]=None, device='cuda') -> None:
+    def __init__(self, world:carla.World,  vehicle:Optional[carla.Actor]=None, data_listener=None, device='cuda') -> None:
         super().__init__(world, vehicle, device)
 
         self.model_config = GlobalConfig()
@@ -35,6 +35,9 @@ class Agent(Vehicle):
         self.model_config.use_our_own_config()
 
         self._model = LidarCenterNet(self.model_config).to(self.device)
+        for param in self._model.parameters():
+            param.requires_grad = False
+
         if self.model_config.sync_batch_norm:
           # Model was trained with Sync. Batch Norm.
           # Need to convert it otherwise parameters will load wrong.
@@ -42,6 +45,8 @@ class Agent(Vehicle):
         self._model.eval()
         state_dict = torch.load(os.path.join(self.vehicle_config.model["dir"], self.vehicle_config.model["weights"]), map_location=self.device)
         self._model.load_state_dict(state_dict, strict=False)
+
+        self.data_listener = data_listener
 
     @torch.inference_mode()
     def follow_route(self, tp_threshold=5.0, wp_threshold=7.0, visualize=False, debug=False):
@@ -89,7 +94,10 @@ class Agent(Vehicle):
             out_data = self.data_tick(data_dict)
 
             if visualize:
-                cv2.imshow("camera", data_dict['rgb_front'][1])
+                cv2.imshow("camera front", data_dict['rgb_front'][1])
+                cv2.imshow("camera left", data_dict['rgb_left'][1])
+                cv2.imshow("camera right", data_dict['rgb_right'][1])
+
                 cv2.waitKey(1)
     
             # Handling of lidar buffer, display
@@ -115,6 +123,16 @@ class Agent(Vehicle):
                     
                     pred_wp = preds[2][0]
                     target_speed_uncertainty = F.softmax(preds[1][0], dim=0)
+                    
+                    if self.data_listener:       
+                        data = {"preds":preds, 
+                                "lidar":torch.tensor(lidar_histogram).unsqueeze(0).to(self.device),
+                                "target_point":bev_waypoint, 
+                                "ego_vel":torch.tensor(ego_vel).reshape(1,1).to(self.device),
+                                "rgb":out_data['rgb'].to(self.device)}
+                        self.data_listener.publish(data) 
+                        while not self.data_listener.is_listening:
+                            print("agent thread waiting", end='\r')
 
                     if self.model_config.use_target_speed_uncertainty:
                         uncertainty = target_speed_uncertainty.detach().cpu().numpy()
@@ -153,3 +171,6 @@ class Agent(Vehicle):
         # Stop vehicle at final waypoint
         control = self._controller.get_control((0.0, self.route[-1]))
         self._vehicle.apply_control(control)
+
+
+            

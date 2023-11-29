@@ -14,6 +14,22 @@ class Config:
                 "size": [1024, 256],            # [w h] of image
                 "fov": 110,
                 "id": 'rgb_front'
+            },
+            {
+                "type": 'sensor.camera.rgb',
+                "position": [0, -1.0, 2.0],  # [x y z] position wrt car
+                "rotation": [0.0, -30.0, 0.0],   # [r p y]
+                "size": [1024, 256],            # [w h] of image
+                "fov": 110,
+                "id": 'rgb_left'
+            },
+            {
+                "type": 'sensor.camera.rgb',
+                "position": [0, 1.0, 2.0],  # [x y z] position wrt car
+                "rotation": [0.0, 30.0, 0.0],   # [r p y]
+                "size": [1024, 256],            # [w h] of image
+                "fov": 110,
+                "id": 'rgb_right'
             }
         ]
 
