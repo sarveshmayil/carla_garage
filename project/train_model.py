@@ -12,10 +12,11 @@ import sys
 import os
 import threading
 import traceback
+import random
 
 class Trainer():
     def __init__(self) -> None:
-        self.EPOCH = 1
+        self.EPOCH = 10
         self.LR = 1e-5
         self.device = "cuda"
         
@@ -34,8 +35,14 @@ class Trainer():
             self.model.load_state_dict(state_dict, strict=False)
             for param in self.model.parameters():
                 param.requires_grad = False
+            # unfreeze last section of image encoder
             for param in self.model.backbone.image_encoder.s4.parameters():
                 param.requires_grad = True
+            # unfreeze attention
+            for i in range(4):
+                for j in range(2):
+                    for param in self.model.backbone.transformers[i].blocks[j].attn.parameters():
+                        param.requires_grad = True
             
 
 
@@ -51,7 +58,7 @@ class Trainer():
                 thread_vehicle = threading.Thread(target=client_manager.vehicle.follow_route, args=(5.0, 7.0, True, True)) # (tp_threshold, wp_threshold, visualize, debug)
                 thread_vehicle.start()
 
-                avg_loss = 0
+                total_loss = 0
                 ticks = 0
                 while thread_vehicle.is_alive():
                     print("main thread waiting", end='\r')
@@ -68,15 +75,15 @@ class Trainer():
                         loss_speed = torch.mean(torch.abs(preds[1][0] - truth[1][0]))
                         loss = loss_speed + loss_wp
 
-                        avg_loss += loss
+                        total_loss += loss
                         ticks += 1
 
                         loss.backward()
                         optim.step()
-                        pbar.set_description(f"loss = {loss}")
+                        pbar.set_description(f"loss_wp = {loss_wp} | loss_speed = {loss_speed}")
 
                         data_listener.is_listening = True
-                tqdm.write(f"epoch = {epoch} | avg_loss = {avg_loss/ticks}")
+                tqdm.write(f"epoch = {epoch} | total_loss = {total_loss/ticks}")
                 
         
     
@@ -106,6 +113,7 @@ class ClientManager():
         self.vehicle = None
         self.data_listener = DataListener()
         self.world = None
+        random.seed(1)
         self.setup()
         
     def __enter__(self):
@@ -118,8 +126,8 @@ class ClientManager():
         print("plz stop crashing")
 
     def setup(self):
-        self.world:carla.World = self.client.load_world('Town01')
-
+        #self.world:carla.World = self.client.load_world('Town01')
+        self.world:carla.World = self.client.load_world(random.choice(self.client.get_available_maps()))
         settings = self.world.get_settings()
         settings.no_rendering_mode = False
         settings.synchronous_mode = True
