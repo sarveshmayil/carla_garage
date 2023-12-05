@@ -12,7 +12,7 @@ if __name__ == "__main__":
     world:carla.World = client.load_world('Town01')
 
     settings = world.get_settings()
-    settings.no_rendering_mode = False
+    settings.no_rendering_mode = True
     settings.synchronous_mode = True
     settings.fixed_delta_seconds = 0.05
     world.apply_settings(settings)

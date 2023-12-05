@@ -67,6 +67,18 @@ class Config:
 
         self.use_target_speed_uncertainty = True
 
+        self.add_image_noise = True
+        self.noise = {
+          "types": ['gaussian', 'poisson', 'salt', 'pepper', 's&p', 'speckle'],
+          "add_noise_prob": 0.2,
+          "mean": 0.0,
+          "var": 0.01,
+          "gamma_var": 0.05,
+          "add_patch_prob": 0.2,
+          "max_n_patches": 5,
+          "min_patch_size": 10
+        }
+
 """
 Config class that contains all the hyperparameters needed to build any model.
 """
