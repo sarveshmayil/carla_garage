@@ -210,17 +210,15 @@ class Agent(Vehicle):
                 rgb.append(rgb_pos)
                 # rgb.append(image)
             elif id.startswith('lidar'):
-                lidar_points = lidar_to_ego_coordinates(data_dict[id],
-                                                        lidar_pos=self.vehicle_config.lidar['position'],
-                                                        lidar_rot=self.vehicle_config.lidar['rotation'],
-                                                        intensity=False)              
+                out_data['lidar'] = lidar_to_ego_coordinates(data_dict[id][1],
+                                                             lidar_pos=self.vehicle_config.lidar['position'],
+                                                             lidar_rot=self.vehicle_config.lidar['rotation'],
+                                                             intensity=False)
                 
-                out_data['lidar'] = lidar_points
-
         rgb = np.concatenate(rgb, axis=1)
-        cv2.imshow("b", rgb.transpose(1,2,0))
+        # cv2.imshow("b", rgb.transpose(1,2,0))
         rgb = torch.from_numpy(rgb).to(self.device, dtype=torch.float32).unsqueeze(0)
-        cv2.waitKey(1)
+        # cv2.waitKey(1)
         out_data['rgb'] = rgb
 
         return out_data
