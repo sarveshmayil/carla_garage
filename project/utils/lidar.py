@@ -59,7 +59,7 @@ def lidar_to_ego_coordinates(lidar, lidar_pos=np.zeros(3), lidar_rot=np.zeros(3)
 
     # The double transpose is a trick to compute all the points together.
     ego_lidar = (rotation_matrix @ lidar[:, :3].T).T + lidar_pos
-    ego_lidar[:, 1] *= -1
+    # ego_lidar[:, 1] *= -1
 
     if intensity:
         ego_lidar = np.hstack((ego_lidar, lidar[:,-1][:,None]))
