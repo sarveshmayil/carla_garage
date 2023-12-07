@@ -309,7 +309,8 @@ class LidarCenterNet(nn.Module):
       if self.extra_sensors:
         extra_sensors = []
         if self.config.use_velocity:
-          extra_sensors.append(self.velocity_normalization(ego_vel))
+          #extra_sensors.append(self.velocity_normalization(ego_vel))
+          extra_sensors.append(ego_vel)
         if self.config.use_discrete_command:
           extra_sensors.append(torch.tensor([0,0,0,1,0,0])[None,:].to("cuda"))
         extra_sensors = torch.cat(extra_sensors, axis=1)

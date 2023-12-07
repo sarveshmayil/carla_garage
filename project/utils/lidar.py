@@ -58,13 +58,29 @@ def lidar_to_ego_coordinates(lidar, lidar_pos=np.zeros(3), lidar_rot=np.zeros(3)
         lidar_pos = np.array(lidar_pos)
 
     # The double transpose is a trick to compute all the points together.
-    ego_lidar = (rotation_matrix @ lidar[1][:, :3].T).T + lidar_pos
-    ego_lidar[:, 1] = -ego_lidar[:, 1]
+    ego_lidar = (rotation_matrix @ lidar[:, :3].T).T + lidar_pos
+    # ego_lidar[:, 1] *= -1
 
     if intensity:
-        ego_lidar = np.hstack((ego_lidar, lidar[1][:,-1][:,None]))
+        ego_lidar = np.hstack((ego_lidar, lidar[:,-1][:,None]))
 
     return ego_lidar
+
+def align_lidar(lidar, yaw, translation=np.zeros(3)):
+  """
+  Translates and rotates a LiDAR into a new coordinate system.
+  Rotation is inverse to translation and yaw
+  :param lidar: numpy LiDAR point cloud (N,3)
+  :param translation: translations in meters
+  :param yaw: yaw angle in radians
+  :return: numpy LiDAR point cloud in the new coordinate system.
+  """
+
+  rotation_matrix = np.array([[np.cos(yaw), -np.sin(yaw), 0.0], [np.sin(yaw), np.cos(yaw), 0.0], [0.0, 0.0, 1.0]])
+
+  aligned_lidar = (rotation_matrix.T @ (lidar - translation).T).T
+
+  return aligned_lidar
 
 def lidar_to_histogram_features(lidar, model_config):
     """

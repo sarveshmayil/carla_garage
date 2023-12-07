@@ -4,14 +4,16 @@ from vehicle import Vehicle
 from autonomous_agent import Agent
 
 from agents.navigation.global_route_planner import GlobalRoutePlanner
-
 from traffic import TrafficUwU
+import random
+
 
 if __name__ == "__main__":
     client = carla.Client("localhost", 2000)
     client.set_timeout(10.0)
     world:carla.World = client.load_world('Town01')
-    
+    #world:carla.World = client.load_world(random.choice(client.get_available_maps()))
+
     settings = world.get_settings()
     settings.no_rendering_mode = True
     settings.synchronous_mode = True
@@ -32,5 +34,7 @@ if __name__ == "__main__":
     vehicle.planner = GlobalRoutePlanner(wmap, sampling_resolution=10)
     vehicle.set_route(start=a, target=b)
     # vehicle.follow_route(target_speed=30, visualize=True, debug=True)  # For Vehicle
+
     traffic_man.spawn_traffic(numCars= 30)
     vehicle.follow_route(visualize=True, debug=False)  # For Agent
+

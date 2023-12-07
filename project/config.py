@@ -10,17 +10,33 @@ class Config:
             {
                 "type": 'sensor.camera.rgb',
                 "position": [1.5, 0.0, 2.0],  # [x y z] position wrt car
-                "rotation": [0.0, 0.0, 0.0],   # [r p y]
+                "rotation": [0.0, 0.0, 0.0],   # [p r y]
                 "size": [1024, 256],            # [w h] of image
                 "fov": 110,
                 "id": 'rgb_front'
+            },
+            {
+                "type": 'sensor.camera.rgb',
+                "position": [0, -1.0, 2.0],  # [x y z] position wrt car
+                "rotation": [0.0, -30.0, 0.0],   # [p r y]
+                "size": [1024, 256],            # [w h] of image
+                "fov": 110,
+                "id": 'rgb_left'
+            },
+            {
+                "type": 'sensor.camera.rgb',
+                "position": [0, 1.0, 2.0],  # [x y z] position wrt car
+                "rotation": [0.0, 30.0, 0.0],   # [p r y]
+                "size": [1024, 256],            # [w h] of image
+                "fov": 110,
+                "id": 'rgb_right'
             }
         ]
 
         self.lidar = {
             "type": 'sensor.lidar.ray_cast',
             "position": [0.0, 0.0, 2.5],  # [x y z] position wrt car
-            "rotation": [0.0, 0.0, 0.0],   # [r p y]
+            "rotation": [0.0, 0.0, 0.0],   # [p r y]
             "rot_freq": 10,  # Hz of lidar sensor
             "points_per_sec": 600000,
             "buffer_threshold": 60000,  # Min amount of points to collect before displaying
@@ -50,6 +66,18 @@ class Config:
         }
 
         self.use_target_speed_uncertainty = True
+
+        self.add_image_noise = True
+        self.noise = {
+          "types": ['gaussian', 'poisson', 'salt', 'pepper', 's&p', 'speckle'],
+          "add_noise_prob": 0.2,
+          "mean": 0.0,
+          "var": 0.01,
+          "gamma_var": 0.05,
+          "add_patch_prob": 0.2,
+          "max_n_patches": 5,
+          "min_patch_size": 10
+        }
 
 """
 Config class that contains all the hyperparameters needed to build any model.

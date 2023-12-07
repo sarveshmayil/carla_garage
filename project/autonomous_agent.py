@@ -12,13 +12,14 @@ from config import GlobalConfig
 from model.tf_model_minimal import LidarCenterNet
 from utils.misc import draw_waypoints
 from utils.lidar import *
+from utils.image_noise import *
 from agents.tools.misc import get_speed
 
-from typing import Optional
+from typing import Optional, Dict, Union
 
 
 class Agent(Vehicle):
-    def __init__(self, world:carla.World,  vehicle:Optional[carla.Actor]=None, device='cuda') -> None:
+    def __init__(self, world:carla.World,  vehicle:Optional[carla.Actor]=None, data_listener=None, device='cuda') -> None:
         super().__init__(world, vehicle, device)
 
         self.model_config = GlobalConfig()
@@ -35,6 +36,11 @@ class Agent(Vehicle):
         self.model_config.use_our_own_config()
 
         self._model = LidarCenterNet(self.model_config).to(self.device)
+        #self._model.load_state_dict(torch.load("model.pt"))
+
+        for param in self._model.parameters():
+            param.requires_grad = False
+
         if self.model_config.sync_batch_norm:
           # Model was trained with Sync. Batch Norm.
           # Need to convert it otherwise parameters will load wrong.
@@ -42,6 +48,8 @@ class Agent(Vehicle):
         self._model.eval()
         state_dict = torch.load(os.path.join(self.vehicle_config.model["dir"], self.vehicle_config.model["weights"]), map_location=self.device)
         self._model.load_state_dict(state_dict, strict=False)
+
+        self.data_listener = data_listener
 
     @torch.inference_mode()
     def follow_route(self, tp_threshold=5.0, wp_threshold=7.0, visualize=False, debug=False):
@@ -67,7 +75,7 @@ class Agent(Vehicle):
         veh_dist = self.dist(target_wp)
         small_waypoints = np.repeat(np.array([self._vehicle.get_transform().location.x, self._vehicle.get_transform().location.y])[None,:], 8, axis=0)
         pred_target_speed = 0.0
-        lidar_buffer = np.empty((0,4))
+        lidar_buffer = np.empty((0,3))
 
         finished = False
 
@@ -76,6 +84,10 @@ class Agent(Vehicle):
 
             if debug:
                 draw_waypoints(self._world, [target_wp])
+            
+            if self.data_listener:       
+                if self.data_listener.end_epoch:
+                    break
             
             # Offset spectator camera to follow car
             spectator_offset = -10 * self._vehicle.get_transform().rotation.get_forward_vector() + \
@@ -89,14 +101,16 @@ class Agent(Vehicle):
             out_data = self.data_tick(data_dict)
 
             if visualize:
-                cv2.imshow("camera", data_dict['rgb_front'][1])
+                cv2.imshow("camera front", data_dict['rgb_front'][1])
+                # cv2.imshow("camera left", data_dict['rgb_left'][1])
+                # cv2.imshow("camera right", data_dict['rgb_right'][1])
                 cv2.waitKey(1)
     
             # Handling of lidar buffer, display
             lidar_buffer = np.vstack((lidar_buffer, out_data['lidar']))
             if lidar_buffer.shape[0] >= self.vehicle_config.lidar['buffer_threshold']:
                 lidar_histogram = lidar_to_histogram_features(lidar_buffer[:,:3], self.model_config)
-                lidar_buffer = np.empty((0,4))
+                lidar_buffer = np.empty((0,3))
 
                 if visualize:
                     cv2.imshow("histogram", lidar_histogram[0])
@@ -108,13 +122,23 @@ class Agent(Vehicle):
                     
                     waypoint = np.array([target_wp.transform.location.x, target_wp.transform.location.y, target_wp.transform.location.z])
                     bev_waypoint = self.waypoint_to_bev(waypoint, freeze_vehicle_transform)
-                    preds = self._model(out_data['rgb'].to(self.device),
+                    preds = self._model(out_data['rgb'][:,:,:,:].to(self.device), #[B, 3, H, W]
                                         torch.tensor(lidar_histogram).unsqueeze(0).to(self.device),
                                         target_point=bev_waypoint, 
                                         ego_vel=torch.tensor(ego_vel).reshape(1,1).to(self.device))
                     
                     pred_wp = preds[2][0]
                     target_speed_uncertainty = F.softmax(preds[1][0], dim=0)
+                    
+                    if self.data_listener:       
+                        data = {"preds":preds, 
+                                "lidar":torch.tensor(lidar_histogram).unsqueeze(0).to(self.device),
+                                "target_point":bev_waypoint, 
+                                "ego_vel":torch.tensor(ego_vel).reshape(1,1).to(self.device),
+                                "rgb":out_data['rgb'].to(self.device)}
+                        self.data_listener.publish(data) 
+                        while not self.data_listener.is_listening:
+                            print("", end='\r')
 
                     if self.model_config.use_target_speed_uncertainty:
                         uncertainty = target_speed_uncertainty.detach().cpu().numpy()
@@ -153,3 +177,59 @@ class Agent(Vehicle):
         # Stop vehicle at final waypoint
         control = self._controller.get_control((0.0, self.route[-1]))
         self._vehicle.apply_control(control)
+
+    @torch.inference_mode()
+    def data_tick(
+        self,
+        data_dict:Dict[str, Union[carla.libcarla.Image, carla.libcarla.LidarMeasurement]]
+    ) -> Dict[str, Union[np.ndarray, torch.Tensor]]:
+        """
+        Post-process image, lidar data.
+
+        Adds jpg artifacts to image data, formats as torch tensor \\
+        Converts lidar scan to ego vehicle coordinate frame
+        """
+        out_data = {}
+        rgb = []
+        for id in self._sensors.keys():
+            if id.startswith('rgb'):
+                image = data_dict[id][1][:,:,:3]
+                # # Also add jpg artifacts at test time, because the training data was saved as jpg.
+                _, compressed_image = cv2.imencode('.jpg', image)
+                image = cv2.imdecode(compressed_image, cv2.IMREAD_UNCHANGED)
+
+                # Add noise
+                if self.vehicle_config.add_image_noise:
+                    if np.random.rand() < self.vehicle_config.noise["add_noise_prob"]:
+                        noise_type = np.random.choice(self.vehicle_config.noise["types"])
+                        if noise_type in ['gaussian', 'speckle']:
+                            image = add_random_noise(image, noise_type=noise_type, mean=self.vehicle_config.noise["mean"], var=self.vehicle_config.noise["var"])
+                        else:
+                            image = add_random_noise(image, noise_type=noise_type)
+                    if np.random.rand() < self.vehicle_config.noise["add_patch_prob"]:
+                        image = add_random_black_patches(image, max_n_patches=self.vehicle_config.noise["max_n_patches"], min_patch_size=self.vehicle_config.noise["min_patch_size"])
+                    image = adjust_exposure(image, gamma_var=self.vehicle_config.noise["gamma_var"])
+
+                rgb_pos = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                # Switch to pytorch channel first order
+                rgb_pos = np.transpose(rgb_pos, (2, 0, 1))
+                rgb.append(rgb_pos)
+                # rgb.append(image)
+            elif id.startswith('lidar'):
+                # out_data['lidar'] = lidar_to_ego_coordinates(data_dict[id][1],
+                #                                              lidar_pos=self.vehicle_config.lidar['position'],
+                #                                              lidar_rot=self.vehicle_config.lidar['rotation'],
+                #                                              intensity=False)
+                out_data['lidar'] = lidar_to_ego_coordinates(data_dict[id][1],
+                                                             lidar_pos=self.vehicle_config.lidar['position'],
+                                                             lidar_rot=[0.0, 0.0, -90.0],
+                                                             intensity=False)
+                
+        rgb = np.concatenate(rgb, axis=1)
+        # cv2.imshow("b", rgb.transpose(1,2,0))
+        rgb = torch.from_numpy(rgb).to(self.device, dtype=torch.float32).unsqueeze(0)
+        # cv2.waitKey(1)
+        out_data['rgb'] = rgb
+
+        return out_data
+            
