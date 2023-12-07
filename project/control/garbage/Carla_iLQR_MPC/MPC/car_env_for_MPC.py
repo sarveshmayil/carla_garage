@@ -53,7 +53,7 @@ pygame.init()
 # ==============================================================================
 
 DT_ = 0.01 # [s] delta time step, = 1/FPS_in_server
-N_DT = 100#1./DT_#1000 # 5 ticks for training DDPG once
+N_DT = 10 # 5 ticks for training DDPG once
 
 NO_RENDERING = False
 
@@ -67,13 +67,13 @@ FUTURE_WAYPOINTS_AS_STATE = 50
 
 SHOW_CAM = True 
 
-START_TIME = 1
+START_TIME = 3
 
 DEBUG = True
 
-MPC_INTERVAL = 3
+MPC_INTERVAL = 1
 
-VIDEO_RECORD = False
+VIDEO_RECORD = True
 RES_X = 1920
 RES_Y = 1080
 
@@ -112,7 +112,7 @@ def draw_planned_trj(world, x_trj, car_z, color=(255,0,0)):
     color = carla.Color(r=color[0],g=color[1],b=color[2],a=255)
     length = x_trj.shape[0]
     xx = x_trj[:,0]
-    yy = x_trj[:,2]
+    yy = x_trj[:,1]
     for i in range(1, length):
         begin = carla.Location(float(xx[i-1]), float(yy[i-1]), float(car_z+1))
         end = carla.Location(float(xx[i]), float(yy[i]), float(car_z+1))
@@ -198,21 +198,13 @@ class CarEnv:
         self.client = carla.Client("localhost", 2000)
         self.client.set_timeout(2.0)
         self.world = self.client.get_world()
-        #self.world = self.client.reload_world()
+        # self.world = self.client.reload_world()
         self.map = self.world.get_map()
         self.blueprint_library = self.world.get_blueprint_library()
         self.model_3 = self.blueprint_library.filter("model3")[0]
-
-        # print(self.blueprint_library.filter("model3"))
-        self.mass = 1847 #self.world.get_actors().find("vehicle.tesla.model3").get_blueprint().get_attribute('mass').as_float()
-        self.Force = carla.Vector3D(0,0,0)
         # self.lr = 1.538900111477258 # from system identification
         self.vehicle = None
         self.actor_list = []
-
-
-        self.ackControl = carla.AckermannControllerSettings(speed_kp=0.15, speed_ki=0.0, speed_kd=0.25, 
-                                                            accel_kp=0.011, accel_ki=0.009, accel_kd=0.001)
 
         # world in sync mode
         self.world.apply_settings(carla.WorldSettings(
@@ -229,7 +221,7 @@ class CarEnv:
 
         self.display = pygame.display.set_mode(
                 (RES_X, RES_Y),
-                pygame.HWSURFACE | pygame.DOUBLEBUF)                                              
+                pygame.HWSURFACE | pygame.DOUBLEBUF)
         self.font = get_font()
         self.clock = pygame.time.Clock()
 
@@ -253,9 +245,6 @@ class CarEnv:
 
         if new_car == True:
             self.vehicle = self.world.spawn_actor(self.model_3, self.spawn_point)
-            self.vehicle.apply_ackermann_controller_settings(self.ackControl)
-                # self.blueprint = self.vehicle.get_blueprint()
-                # self.mass = self.blueprint.get_attribute('mass').as_float()
             self.actor_list.append(self.vehicle)
         else:
             self.vehicle.set_transform(self.spawn_point)
@@ -357,23 +346,14 @@ class CarEnv:
         beta = beta_candidate[min_index]
 
         # state = [self.velocity.x, self.velocity.y, self.yaw, self.angular_velocity.z]
-        # state = [
-        #             self.location.x, # x
-        #             self.location.y, # y
-        #             onp.sqrt(vx**2 + vy**2), # v
-        #             phi, # phi
-        #             beta, # beta
-        #         ]
-        ang_vel = self.vehicle.get_angular_velocity() * onp.pi / 180.0
-        # x vx y vy phi angular_velocity.z
         state = [
-            self.location.x,
-            vx,
-            self.location.y,
-            vy,
-            phi,
-            ang_vel.z
-        ]
+                    self.location.x, # x
+                    self.location.y, # y
+                    onp.sqrt(vx**2 + vy**2), # v
+                    phi, # phi
+                    beta, # beta
+                ]
+
         return onp.array(state)
 
     def get_waypoint(self,):
@@ -391,36 +371,17 @@ class CarEnv:
             steer_, throttle_, brake_ = action
         else:
             steer_ = 0
-            throttle_ = 0
+            throttle_ = 0.5
             brake_ = 0
-        # accel = float(thrust_)/self.mass
 
-        # assert -1 <= steer_ <= 1 and -5000<= thrust_ <= 5000 
+        assert steer_ >= -1 and steer_ <= 1 and throttle_ <= 1 and throttle_ >= 0 and  brake_ <= 1 and brake_ >= 0
+
         tqdm.write(
-            "time: {0:1.2f}, steer: {1:5.2f}, throttle: {2:5.2f}, accel: {3:5.2f}".format(float(self.time), float(steer_), float(throttle_), self.vehicle.get_acceleration().length())
+            "steer = {0:5.2f}, throttle {1:5.2f}, brake {2:5.2f}".format(float(steer_), float(throttle_), float(brake_))
         )
 
-        # phys = self.vehicle.get_physics_control()
-        # wheels = phys.wheels
-        # print(f'mass: {phys.mass}, moi: {phys.moi}')
-        # print(wheel_phys)
-        # for wheel_phys in wheels:
-        #     print(f'friction coeff: {wheel_phys.tire_friction}, long_stiff: {wheel_phys.long_stiff_value}, lat_stiff: {wheel_phys.lat_stiff_value}, lat_stiff_max_load: {wheel_phys.lat_stiff_max_load}')
-            # pos = wheel_phys.position
-            # print(f'x:{pos.x:0.3f}, y:{pos.y:0.3f}, z:{pos.z:0.3f}')
         self.vehicle.apply_control(carla.VehicleControl(throttle=float(throttle_), steer=float(steer_), brake=float(brake_)))
-        # self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(steer=float(steer_), acceleration=float(thrust_)/self.mass, speed = 8))
-        # self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(steer=float(steer_)))
-        # self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(acceleration=100, speed = 8))
 
-        # self.vehicle.add_force(-1*self.Force)
-        # _,_,_,_,phi,_ = self.get_state()
-        # scale = 10
-        # self.Force = carla.Vector3D(scale*thrust_*onp.cos(phi), scale*thrust_*onp.sin(phi), 0)
-        # # force = 50000
-        # # self.Force = carla.Vector3D(force*onp.cos(phi),force*onp.sin(phi), 0)
-        # self.vehicle.add_force(self.Force)
-        # self.vehicle.apply_ackermann_control(carla.VehicleAckermannControl(acceleration=5, speed = 10000))
         # move a step
         for i in range(N_DT):
             self.clock.tick()
@@ -443,7 +404,7 @@ class CarEnv:
             v_offset = 25
             bar_h_offset = 75
             bar_width = 100
-            for key, value in {"steering":steer_, "throttle":throttle_}.items():
+            for key, value in {"steering":steer_, "throttle":throttle_, "brake":brake_}.items():
                 rect_border = pygame.Rect((bar_h_offset, v_offset + 8), (bar_width, 6))
                 pygame.draw.rect(self.display, (255, 255, 255), rect_border, 1)
                 if key == "steering":
@@ -464,12 +425,11 @@ class CarEnv:
             
             pygame.display.flip()
 
-            if i%2 == 0 and VIDEO_RECORD and self.time >= START_TIME:
-                pass
-                # Save every frame
-                # filename = "Snaps/%05d.png" % self.file_num
-                # pygame.image.save(self.display, filename)
-                # self.file_num += 1
+            # if i%2 == 0 and VIDEO_RECORD and self.time >= START_TIME:
+            #     # Save every frame
+            #     filename = "Snaps/%05d.png" % self.file_num
+            #     pygame.image.save(self.display, filename)
+            #     self.file_num += 1
             
 
         # do we need to wait for tick (10) first?
