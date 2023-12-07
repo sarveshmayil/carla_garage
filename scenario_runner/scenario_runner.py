@@ -328,7 +328,7 @@ class ScenarioRunner(object):
             self.world.tick()
         else:
             self.world.wait_for_tick()
-        if CarlaDataProvider.get_map().name != town and CarlaDataProvider.get_map().name != "OpenDriveMap":
+        if CarlaDataProvider.get_map().name != 'Carla/Maps/'+town and CarlaDataProvider.get_map().name != "OpenDriveMap":
             print("The CARLA server uses the wrong map: {}".format(CarlaDataProvider.get_map().name))
             print("This scenario requires to use map: {}".format(town))
             return False
