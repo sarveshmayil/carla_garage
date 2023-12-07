@@ -14,6 +14,7 @@ import threading
 import traceback
 import random
 import time
+from traffic import TrafficUwU
 
 class Trainer():
     def __init__(self) -> None:
@@ -157,12 +158,15 @@ class ClientManager():
         a = carla.Location(spawn_points[3].location)
         b = carla.Location(spawn_points[100].location)
 
+        traffic_man = TrafficUwU(idxA = 3, idxB = 100)
+
         # vehicle = Vehicle(world=world)
         self.vehicle = Agent(world=self.world, data_listener=self.data_listener)
         self.vehicle.spawn(location=carla.Location(spawn_points[3].location))
         self.vehicle.set_controller_pid()
         self.vehicle.planner = GlobalRoutePlanner(wmap, sampling_resolution=10)
         self.vehicle.set_route(start=a, target=b)
+        traffic_man.spawn_traffic(numCars= 30)
     
     def get_vehicle(self):
         return self.vehicle
