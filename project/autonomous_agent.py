@@ -42,9 +42,9 @@ class Agent(Vehicle):
             param.requires_grad = False
 
         if self.model_config.sync_batch_norm:
-          # Model was trained with Sync. Batch Norm.
-          # Need to convert it otherwise parameters will load wrong.
-          net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
+            # Model was trained with Sync. Batch Norm.
+            # Need to convert it otherwise parameters will load wrong.
+            self._model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self._model)
         self._model.eval()
         state_dict = torch.load(os.path.join(self.vehicle_config.model["dir"], self.vehicle_config.model["weights"]), map_location=self.device)
         self._model.load_state_dict(state_dict, strict=False)
