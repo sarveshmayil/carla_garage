@@ -112,6 +112,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.vscode/
 
 # Spyder project settings
 .spyderproject
@@ -140,3 +141,4 @@ carla/
 /Experimental_Results
 /tools/proxy_simulator/map_data
 pretrained_models/
+*.pt*
