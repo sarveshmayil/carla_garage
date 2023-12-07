@@ -122,7 +122,7 @@ class Agent(Vehicle):
                     
                     waypoint = np.array([target_wp.transform.location.x, target_wp.transform.location.y, target_wp.transform.location.z])
                     bev_waypoint = self.waypoint_to_bev(waypoint, freeze_vehicle_transform)
-                    preds = self._model(out_data['rgb'][:,:256,:,:].to(self.device), #[B, 3, H, W]
+                    preds = self._model(out_data['rgb'][:,:,:256,:].to(self.device), #[B, 3, H, W]
                                         torch.tensor(lidar_histogram).unsqueeze(0).to(self.device),
                                         target_point=bev_waypoint, 
                                         ego_vel=torch.tensor(ego_vel).reshape(1,1).to(self.device))
