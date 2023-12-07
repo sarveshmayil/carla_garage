@@ -36,6 +36,8 @@ class Agent(Vehicle):
         self.model_config.use_our_own_config()
 
         self._model = LidarCenterNet(self.model_config).to(self.device)
+        #self._model.load_state_dict(torch.load("model.pt"))
+
         for param in self._model.parameters():
             param.requires_grad = False
 
@@ -82,6 +84,10 @@ class Agent(Vehicle):
 
             if debug:
                 draw_waypoints(self._world, [target_wp])
+            
+            if self.data_listener:       
+                if self.data_listener.end_epoch:
+                    break
             
             # Offset spectator camera to follow car
             spectator_offset = -10 * self._vehicle.get_transform().rotation.get_forward_vector() + \
@@ -132,7 +138,7 @@ class Agent(Vehicle):
                                 "rgb":out_data['rgb'].to(self.device)}
                         self.data_listener.publish(data) 
                         while not self.data_listener.is_listening:
-                            print("agent thread waiting", end='\r')
+                            print("", end='\r')
 
                     if self.model_config.use_target_speed_uncertainty:
                         uncertainty = target_speed_uncertainty.detach().cpu().numpy()

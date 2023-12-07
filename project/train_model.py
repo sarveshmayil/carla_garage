@@ -13,15 +13,18 @@ import os
 import threading
 import traceback
 import random
+import time
 
 class Trainer():
     def __init__(self) -> None:
-        self.EPOCH = 10
-        self.LR = 1e-5
+        self.EPOCH = 20
+        self.LR = 1e-4
         self.device = "cuda"
         
         self.model = None
         self.vehicle = None
+
+        self.epoch_timeout = 600 #seconds
 
 
 
@@ -31,8 +34,14 @@ class Trainer():
         with ClientManager() as client_manager:
             self.vehicle = client_manager.get_vehicle()
             self.model = tf_model_minimal.LidarCenterNet(self.vehicle.model_config).to(self.device)
-            state_dict = torch.load(os.path.join(self.vehicle.vehicle_config.model["dir"], self.vehicle.vehicle_config.model["weights"]), map_location=self.device)
-            self.model.load_state_dict(state_dict, strict=False)
+
+            '''original model'''
+            # state_dict = torch.load(os.path.join(self.vehicle.vehicle_config.model["dir"], self.vehicle.vehicle_config.model["weights"]), map_location=self.device)
+            # self.model.load_state_dict(state_dict, strict=False)
+
+            '''our model'''
+            self.model.load_state_dict(torch.load("model.pt"))
+
             for param in self.model.parameters():
                 param.requires_grad = False
             # unfreeze last section of image encoder
@@ -53,15 +62,19 @@ class Trainer():
             pbar = tqdm(range(self.EPOCH))
             self.model.train()
             for epoch in pbar:
+                data_listener.end_epoch = False
                 if epoch != 0: client_manager.setup()
                 self.vehicle = client_manager.get_vehicle()
-                thread_vehicle = threading.Thread(target=client_manager.vehicle.follow_route, args=(5.0, 7.0, True, True)) # (tp_threshold, wp_threshold, visualize, debug)
+                thread_vehicle = threading.Thread(target=client_manager.vehicle.follow_route, args=(5.0, 7.0, False, False)) # (tp_threshold, wp_threshold, visualize, debug)
                 thread_vehicle.start()
+                epoch_start = time.time()
 
                 total_loss = 0
                 ticks = 0
                 while thread_vehicle.is_alive():
-                    print("main thread waiting", end='\r')
+                    print("", end='\r')
+                    if time.time() - epoch_start > self.epoch_timeout:
+                        data_listener.end_epoch = True
                     if len(data_listener.data) != 0:
                         optim.zero_grad()
                         data = data_listener.data.pop()
@@ -83,7 +96,12 @@ class Trainer():
                         pbar.set_description(f"loss_wp = {loss_wp} | loss_speed = {loss_speed}")
 
                         data_listener.is_listening = True
-                tqdm.write(f"epoch = {epoch} | total_loss = {total_loss/ticks}")
+                time.sleep(1)
+                tqdm.write(f"epoch = {epoch} | avg_loss = {total_loss/ticks}")
+                self.vehicle.__del__()
+
+            torch.save(self.model.state_dict(), "model.pt")
+
                 
         
     
@@ -122,12 +140,12 @@ class ClientManager():
     def __exit__(self, exc_type, exc_value, tb):
         if exc_type is not None:
             traceback.print_exception(exc_type, exc_value, tb)
-        self.vehicle.__del__()
+        #self.vehicle.__del__()
         print("plz stop crashing")
 
     def setup(self):
-        #self.world:carla.World = self.client.load_world('Town01')
-        self.world:carla.World = self.client.load_world(random.choice(self.client.get_available_maps()))
+        self.world:carla.World = self.client.load_world('Town01')
+        #self.world:carla.World = self.client.load_world(random.choice(self.client.get_available_maps()))
         settings = self.world.get_settings()
         settings.no_rendering_mode = False
         settings.synchronous_mode = True
@@ -153,6 +171,7 @@ class DataListener():
     def __init__(self) -> None:
         self.is_listening = True
         self.data = []
+        self.end_epoch = False
         
     def publish(self, data):
         self.data.append(data)
