@@ -284,9 +284,7 @@ class ProjectAgent(autonomous_agent.AutonomousAgent):
             lidar_histogram = lidar_to_histogram_features(self.lidar_buffer[:,:3], self.model_config)
             self.lidar_buffer = np.empty((0,3))
         else:
-            tmp_control = carla.VehicleControl(steer=0.0, throttle=0.0, brake=1.0)
-            self.control = tmp_control
-            return tmp_control
+            return self.control
         
         preds = self._model(rgb=tick_data['rgb'][:,:,:,:], #[B, 3, H, W]
                             lidar_bev=torch.tensor(lidar_histogram).unsqueeze(0).to(self.device),
@@ -319,7 +317,7 @@ class ProjectAgent(autonomous_agent.AutonomousAgent):
 
         return control
     
-    def destroy(self):
+    def destroy(self, results=None):
         del self._model
         del self.model_config
 
