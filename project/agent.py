@@ -17,8 +17,8 @@ from utils.image_noise import *
 from control.pid_vehicle_control import PIDController
 from model.tf_model_minimal import LidarCenterNet
 from leaderboard.autoagents import autonomous_agent
-from team_code.nav_planner import RoutePlanner, extrapolate_waypoint_route
-import team_code.transfuser_utils as t_u
+from nav_planner import RoutePlanner, extrapolate_waypoint_route
+import transfuser_utils as t_u
 
 from filterpy.kalman import MerweScaledSigmaPoints
 from filterpy.kalman import UnscentedKalmanFilter as UKF
@@ -61,6 +61,7 @@ class ProjectAgent(autonomous_agent.AutonomousAgent):
         self.model_config = GlobalConfig()
         # Overwrite all properties that were set in the saved config.
         self.model_config.__dict__.update(loaded_config.__dict__)
+        self.model_config.use_our_own_config()
 
         for k, v in args.items():
             if not isinstance(v, str):
@@ -88,7 +89,7 @@ class ProjectAgent(autonomous_agent.AutonomousAgent):
                        dim_z=4,
                        fx=bicycle_model_forward,
                        hx=measurement_function_hx,
-                       dt=self.config.carla_frame_rate,
+                       dt=self.model_config.carla_frame_rate,
                        points=self.points,
                        x_mean_fn=state_mean,
                        z_mean_fn=measurement_mean,
@@ -193,7 +194,7 @@ class ProjectAgent(autonomous_agent.AutonomousAgent):
         """
         out_data = {}
         rgb = []
-        for id in self.sensor_keys():
+        for id in self.sensor_keys:
             if id.startswith('rgb'):
                 image = data_dict[id][1][:,:,:3]
                 # Also add jpg artifacts at test time, because the training data was saved as jpg.
@@ -279,9 +280,9 @@ class ProjectAgent(autonomous_agent.AutonomousAgent):
 
         self.lidar_buffer = np.vstack((self.lidar_buffer, tick_data['lidar']))
 
-        if lidar_buffer.shape[0] >= self.vehicle_config.lidar['buffer_threshold']:
-            lidar_histogram = lidar_to_histogram_features(lidar_buffer[:,:3], self.model_config)
-            lidar_buffer = np.empty((0,3))
+        if self.lidar_buffer.shape[0] >= self.vehicle_config.lidar['buffer_threshold']:
+            lidar_histogram = lidar_to_histogram_features(self.lidar_buffer[:,:3], self.model_config)
+            self.lidar_buffer = np.empty((0,3))
         else:
             tmp_control = carla.VehicleControl(steer=0.0, throttle=0.0, brake=1.0)
             self.control = tmp_control
@@ -289,9 +290,8 @@ class ProjectAgent(autonomous_agent.AutonomousAgent):
         
         preds = self._model(rgb=tick_data['rgb'][:,:,:,:], #[B, 3, H, W]
                             lidar_bev=torch.tensor(lidar_histogram).unsqueeze(0).to(self.device),
-                            target_point=tick_data['target_point'], 
-                            ego_vel=tick_data['speed'].reshape(1,1),
-                            command=tick_data['command'])
+                            target_point=tick_data['target_point'].reshape(-1), 
+                            ego_vel=tick_data['speed'].reshape(1,1))
         
         pred_wp = preds[2][0].detach().cpu().numpy()
         target_speed_uncertainty = F.softmax(preds[1][0], dim=0)
@@ -305,8 +305,8 @@ class ProjectAgent(autonomous_agent.AutonomousAgent):
         else:
             pred_target_speed_index = torch.argmax(target_speed_uncertainty)
             pred_target_speed = self.model_config.target_speeds[pred_target_speed_index]
-    
-        pred_angle = -math.degrees(math.atan2(-pred_wp[1], pred_wp[0])) / 90.0
+
+        pred_angle = -math.degrees(math.atan2(-pred_wp[1][1], pred_wp[1][0])) / 90.0
         steer, throttle, brake = self._model.control_pid_direct(pred_target_speed, pred_angle, tick_data['speed'])
         control = carla.VehicleControl(steer=float(steer), throttle=float(throttle), brake=float(brake))
 
