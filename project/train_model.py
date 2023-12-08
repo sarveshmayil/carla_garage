@@ -25,7 +25,7 @@ class Trainer():
         self.model = None
         self.vehicle = None
 
-        self.epoch_timeout = 20 #seconds
+        self.epoch_timeout = 300 #seconds
 
 
 
@@ -37,11 +37,11 @@ class Trainer():
             self.model = tf_model_minimal.LidarCenterNet(self.vehicle.model_config).to(self.device)
 
             '''original model'''
-            # state_dict = torch.load(os.path.join(self.vehicle.vehicle_config.model["dir"], self.vehicle.vehicle_config.model["weights"]), map_location=self.device)
-            # self.model.load_state_dict(state_dict, strict=False)
+            state_dict = torch.load(os.path.join(self.vehicle.vehicle_config.model["dir"], self.vehicle.vehicle_config.model["weights"]), map_location=self.device)
+            self.model.load_state_dict(state_dict, strict=False)
 
             '''our model'''
-            self.model.load_state_dict(torch.load("model.pt"))
+            #self.model.load_state_dict(torch.load("model.pt"))
 
             for param in self.model.parameters():
                 param.requires_grad = False
@@ -85,7 +85,7 @@ class Trainer():
                                             ego_vel=data["ego_vel"])
                         truth = data["preds"]
 
-                        loss_wp = 100*torch.mean(torch.abs(preds[2][0] - truth[2][0]))
+                        loss_wp = 50*torch.mean(torch.abs(preds[2][0] - truth[2][0]))
                         loss_speed = torch.mean(torch.abs(preds[1][0] - truth[1][0]))
                         loss = loss_speed + loss_wp
 
@@ -135,6 +135,8 @@ class ClientManager():
         self.routes = []
         self.route_index = 0
         self.num_routes = 0
+
+        #self.traffic_man = TrafficUwU(idxA = 3, idxB = 100)
         
         random.seed(1)
         self.read_routes()
@@ -147,6 +149,7 @@ class ClientManager():
         if exc_type is not None:
             traceback.print_exception(exc_type, exc_value, tb)
         #self.vehicle.__del__()
+        #self.traffic_man.destroyVehicles()
         print("plz stop crashing")
 
     def setup(self):
@@ -167,7 +170,7 @@ class ClientManager():
                                             fog_density = random.random()*50)
         self.world.set_weather(weather)
 
-        traffic_man = TrafficUwU(idxA = 3, idxB = 100)
+        
 
         self.vehicle = Agent(world=self.world, data_listener=self.data_listener)
 
@@ -178,13 +181,14 @@ class ClientManager():
         self.vehicle.set_controller_pid()
         self.vehicle.planner = GlobalRoutePlanner(wmap, sampling_resolution=10)
         self.vehicle.set_route(start=start, target=target)
-        traffic_man.spawn_traffic(numCars= 30)
+        # self.traffic_man.destroyVehicles()
+        # self.traffic_man.spawn_traffic(numCars = 30)
     
     def get_vehicle(self):
         return self.vehicle
 
     def read_routes(self):
-        for town in range(1,8):
+        for town in [1,2,3,4,5]:
             for scenario in [1,3,4,7,8,9]:
                 route_indexer = RouteIndexer(f"leaderboard/data/training/routes/s{scenario}/Town0{town}_Scenario{scenario}.xml", 
                                             f"leaderboard/data/training/scenarios/s{scenario}/Town0{town}_Scenario{scenario}.json", 1)
@@ -194,6 +198,7 @@ class ClientManager():
                         self.routes.append(route)
                     else: 
                         break
+        self.routes = random.choices(self.routes, k=80)
         self.num_routes = len(self.routes)
         
                 

@@ -77,3 +77,6 @@ class TrafficUwU:
         except:
             print("   Warning! Actor Generation is not valid. No actor will be spawned.")
             return []
+
+    def destroyVehicles(self):
+        self.client.apply_batch([carla.command.DestroyActor(x) for x in self.vehicles_list])
