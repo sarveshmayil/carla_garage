@@ -37,7 +37,7 @@ if __name__ == "__main__":
                                         fog_density = random.random()*50)
     world.set_weather(weather)
 
-    traffic_man = TrafficUwU(idxA = 0, idxB = 100)
+    #traffic_man = TrafficUwU(idxA = 0, idxB = 100)
     
     # vehicle = Vehicle(world=world)
     vehicle = Agent(world=world)
@@ -50,6 +50,6 @@ if __name__ == "__main__":
     vehicle.set_route(start=start, target=target)
     # vehicle.follow_route(target_speed=30, visualize=True, debug=True)  # For Vehicle
 
-    traffic_man.spawn_traffic(numCars= 30)
+    #traffic_man.spawn_traffic(numCars= 30)
     vehicle.follow_route(visualize=True, debug=False)  # For Agent
 

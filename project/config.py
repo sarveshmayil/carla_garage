@@ -67,7 +67,7 @@ class Config:
 
         self.use_target_speed_uncertainty = True
 
-        self.add_image_noise = True
+        self.add_image_noise = False
         self.noise = {
           "types": ['gaussian', 'poisson', 'salt', 'pepper', 's&p', 'speckle'],
           "add_noise_prob": 0.2,

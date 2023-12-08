@@ -30,8 +30,6 @@ class Trainer():
 
 
     def train(self):
-        
-
         with ClientManager() as client_manager:
             self.vehicle = client_manager.get_vehicle()
             self.model = tf_model_minimal.LidarCenterNet(self.vehicle.model_config).to(self.device)
@@ -60,6 +58,8 @@ class Trainer():
 
             data_listener = client_manager.data_listener
             skip_epoch = 0
+
+            loss_history = []
 
             pbar = tqdm(range(client_manager.num_routes))
             self.model.train()
@@ -101,9 +101,20 @@ class Trainer():
                         pbar.set_description(f"loss_wp = {loss_wp} | loss_speed = {loss_speed}")
 
                         data_listener.is_listening = True
+
+
                 time.sleep(1)
                 tqdm.write(f"epoch = {epoch} | avg_loss = {total_loss/ticks}")
+                loss_history += (total_loss/ticks).detach().cpu().numpy()
                 self.vehicle.__del__()
+
+                if epoch % 10 == 0 and epoch != 0:
+                    torch.save({
+                                'epoch': epoch,
+                                'model_state_dict': self.model.state_dict(),
+                                'optimizer_state_dict': optim.state_dict(),
+                                'train_loss_history': loss_history,
+                                }, f"trained_models/checkpoint{epoch//10}.pth")
 
             torch.save(self.model.state_dict(), "model.pt")
 
@@ -212,6 +223,19 @@ class ClientManager():
         self.routes = random.choices(self.routes, k=80)
         self.num_routes = len(self.routes)
         
+def load_checkpoint(model, optimizer, filename):
+    if os.path.isfile(filename):
+        print("loading checkpoint '{}'".format(filename))
+        checkpoint = torch.load(filename)
+        start_epoch = checkpoint['epoch']
+        model.load_state_dict(checkpoint['state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        print("loaded checkpoint '{}' (epoch {})"
+                  .format(filename, checkpoint['epoch']))
+    else:
+        print("no checkpoint found at '{}'".format(filename))
+
+    return model, optimizer
                 
 
 class DataListener():

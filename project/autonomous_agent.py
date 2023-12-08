@@ -36,6 +36,8 @@ class Agent(Vehicle):
         self.model_config.use_our_own_config()
 
         self._model = LidarCenterNet(self.model_config).to(self.device)
+
+        '''load our model'''
         #self._model.load_state_dict(torch.load("model.pt"))
 
         for param in self._model.parameters():
@@ -46,6 +48,8 @@ class Agent(Vehicle):
           # Need to convert it otherwise parameters will load wrong.
           net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
         self._model.eval()
+
+        '''load original model'''
         state_dict = torch.load(os.path.join(self.vehicle_config.model["dir"], self.vehicle_config.model["weights"]), map_location=self.device)
         self._model.load_state_dict(state_dict, strict=False)
 
