@@ -59,12 +59,16 @@ class Trainer():
             optim = torch.optim.AdamW(self.model.parameters(), lr=self.LR)
 
             data_listener = client_manager.data_listener
+            skip_epoch = 0
 
             pbar = tqdm(range(client_manager.num_routes))
             self.model.train()
             for epoch in pbar:
                 data_listener.end_epoch = False
-                if epoch != 0: client_manager.setup()
+                if epoch != 0: 
+                    skip_epoch = client_manager.setup()
+                if skip_epoch:
+                    continue
                 self.vehicle = client_manager.get_vehicle()
                 thread_vehicle = threading.Thread(target=client_manager.vehicle.follow_route, args=(5.0, 7.0, False, False)) # (tp_threshold, wp_threshold, visualize, debug)
                 thread_vehicle.start()
@@ -128,7 +132,7 @@ class Trainer():
 class ClientManager():
     def __init__(self):
         self.client = carla.Client("localhost", 2000)
-        self.client.set_timeout(10.0)
+        self.client.set_timeout(100.0)
         self.vehicle = None
         self.data_listener = DataListener()
         self.world = None
@@ -176,7 +180,12 @@ class ClientManager():
 
         start = carla.Location(route.trajectory[0].x, route.trajectory[0].y, route.trajectory[0].z+1) # z+1 to avoid collision with ground
         target = route.trajectory[-1]
-        self.vehicle.spawn(location=start, rotation=route.rotations[0])
+        try:
+            self.vehicle.spawn(location=start, rotation=route.rotations[0])
+        except RuntimeError:
+            print("collision at spawn, skipping route")
+            skip = 1
+            return skip
 
         self.vehicle.set_controller_pid()
         self.vehicle.planner = GlobalRoutePlanner(wmap, sampling_resolution=10)
@@ -184,6 +193,8 @@ class ClientManager():
         # self.traffic_man.destroyVehicles()
         # self.traffic_man.spawn_traffic(numCars = 30)
     
+        skip = 0
+        return skip
     def get_vehicle(self):
         return self.vehicle
 

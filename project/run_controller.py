@@ -31,10 +31,10 @@ if __name__ == "__main__":
     #a = carla.Location(spawn_points[3].location)
     #b = carla.Location(spawn_points[100].location)
     weather = carla.WeatherParameters(
-    cloudiness=random.random()*100,
-    precipitation=random.random()*100,
-    sun_altitude_angle=(random.random()-0.5)*180,
-    fog_density = random.random()*50)
+                                        cloudiness=random.random()*100,
+                                        precipitation=random.random()*100,
+                                        sun_altitude_angle=(random.random()-0.5)*180,
+                                        fog_density = random.random()*50)
     world.set_weather(weather)
 
     traffic_man = TrafficUwU(idxA = 0, idxB = 100)
