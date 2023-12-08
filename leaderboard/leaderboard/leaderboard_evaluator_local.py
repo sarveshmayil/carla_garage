@@ -228,7 +228,7 @@ class LeaderboardEvaluator(object):
         else:
             self.world.wait_for_tick()
 
-        if CarlaDataProvider.get_map().name != town:
+        if CarlaDataProvider.get_map().name != 'Carla/Maps/'+town:
             raise Exception("The CARLA server uses the wrong map!"
                             "This scenario requires to use map {}".format(town))
 
@@ -420,7 +420,9 @@ class LeaderboardEvaluator(object):
         """
         route_indexer = RouteIndexer(args.routes, args.scenarios, args.repetitions)
 
-        if args.resume:
+        #for some reason resume is always true, even when setting the arg
+        #resume breaks the route_indexer.peek() while loop below
+        if False:#args.resume
             route_indexer.resume(args.checkpoint)
             self.statistics_manager.resume(args.checkpoint)
         else:

@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 
 from agents.navigation.global_route_planner import GlobalRoutePlanner
-from agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
+#from agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
 
 
 class PIDController(object):
@@ -150,9 +150,9 @@ def interpolate_trajectory(world_map, waypoints_trajectory, hop_resolution=1.0, 
         trajectory going to be made
     """
 
-  dao = GlobalRoutePlannerDAO(world_map, hop_resolution)
-  grp = GlobalRoutePlanner(dao)
-  grp.setup()
+  # dao = GlobalRoutePlannerDAO(world_map, hop_resolution)
+  grp = GlobalRoutePlanner(world_map, sampling_resolution=10)
+  # grp.setup()
   # Obtain route plan
   route = []
   # Goes until the one before the last.
