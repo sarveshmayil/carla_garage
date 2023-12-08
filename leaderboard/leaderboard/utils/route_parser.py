@@ -67,12 +67,21 @@ class RouteParser(object):
             new_config.scenario_file = scenario_file
 
             waypoint_list = []  # the list of waypoints that can be found on this route
+            rotation_list = []
             for waypoint in route.iter('waypoint'):
                 waypoint_list.append(carla.Location(x=float(waypoint.attrib['x']),
                                                     y=float(waypoint.attrib['y']),
                                                     z=float(waypoint.attrib['z'])))
+                rotation_list.append((
+                                    
+                                    float(waypoint.attrib['roll']),
+                                    float(waypoint.attrib['yaw']),
+                                    float(waypoint.attrib['pitch'])
+                                   
+                ))
 
             new_config.trajectory = waypoint_list
+            new_config.rotations = rotation_list
 
             list_route_descriptions.append(new_config)
 

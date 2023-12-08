@@ -15,17 +15,17 @@ import traceback
 import random
 import time
 from traffic import TrafficUwU
+from leaderboard.utils.route_indexer import RouteIndexer
 
 class Trainer():
     def __init__(self) -> None:
-        self.EPOCH = 20
         self.LR = 1e-4
         self.device = "cuda"
         
         self.model = None
         self.vehicle = None
 
-        self.epoch_timeout = 600 #seconds
+        self.epoch_timeout = 20 #seconds
 
 
 
@@ -60,7 +60,7 @@ class Trainer():
 
             data_listener = client_manager.data_listener
 
-            pbar = tqdm(range(self.EPOCH))
+            pbar = tqdm(range(client_manager.num_routes))
             self.model.train()
             for epoch in pbar:
                 data_listener.end_epoch = False
@@ -85,7 +85,7 @@ class Trainer():
                                             ego_vel=data["ego_vel"])
                         truth = data["preds"]
 
-                        loss_wp = torch.mean(torch.abs(preds[2][0] - truth[2][0]))
+                        loss_wp = 100*torch.mean(torch.abs(preds[2][0] - truth[2][0]))
                         loss_speed = torch.mean(torch.abs(preds[1][0] - truth[1][0]))
                         loss = loss_speed + loss_wp
 
@@ -132,7 +132,12 @@ class ClientManager():
         self.vehicle = None
         self.data_listener = DataListener()
         self.world = None
+        self.routes = []
+        self.route_index = 0
+        self.num_routes = 0
+        
         random.seed(1)
+        self.read_routes()
         self.setup()
         
     def __enter__(self):
@@ -145,8 +150,9 @@ class ClientManager():
         print("plz stop crashing")
 
     def setup(self):
-        self.world:carla.World = self.client.load_world('Town01')
-        #self.world:carla.World = self.client.load_world(random.choice(self.client.get_available_maps()))
+        route = self.routes[self.route_index]
+        self.route_index += 1
+        self.world = self.client.load_world(route.town)
         settings = self.world.get_settings()
         settings.no_rendering_mode = False
         settings.synchronous_mode = True
@@ -154,22 +160,43 @@ class ClientManager():
         self.world.apply_settings(settings)
 
         wmap:carla.Map = self.world.get_map()
-        spawn_points = wmap.get_spawn_points()
-        a = carla.Location(spawn_points[3].location)
-        b = carla.Location(spawn_points[100].location)
+        weather = carla.WeatherParameters(
+                                            cloudiness=random.random()*100,
+                                            precipitation=random.random()*100,
+                                            sun_altitude_angle=(random.random()-0.5)*180,
+                                            fog_density = random.random()*50)
+        self.world.set_weather(weather)
 
         traffic_man = TrafficUwU(idxA = 3, idxB = 100)
 
-        # vehicle = Vehicle(world=world)
         self.vehicle = Agent(world=self.world, data_listener=self.data_listener)
-        self.vehicle.spawn(location=carla.Location(spawn_points[3].location))
+
+        start = carla.Location(route.trajectory[0].x, route.trajectory[0].y, route.trajectory[0].z+1) # z+1 to avoid collision with ground
+        target = route.trajectory[-1]
+        self.vehicle.spawn(location=start, rotation=route.rotations[0])
+
         self.vehicle.set_controller_pid()
         self.vehicle.planner = GlobalRoutePlanner(wmap, sampling_resolution=10)
-        self.vehicle.set_route(start=a, target=b)
+        self.vehicle.set_route(start=start, target=target)
         traffic_man.spawn_traffic(numCars= 30)
     
     def get_vehicle(self):
         return self.vehicle
+
+    def read_routes(self):
+        for town in range(1,8):
+            for scenario in [1,3,4,7,8,9]:
+                route_indexer = RouteIndexer(f"leaderboard/data/training/routes/s{scenario}/Town0{town}_Scenario{scenario}.xml", 
+                                            f"leaderboard/data/training/scenarios/s{scenario}/Town0{town}_Scenario{scenario}.json", 1)
+                while True:
+                    route = route_indexer.next()
+                    if route != None: 
+                        self.routes.append(route)
+                    else: 
+                        break
+        self.num_routes = len(self.routes)
+        
+                
 
 class DataListener():
     def __init__(self) -> None:

@@ -120,7 +120,11 @@ class Agent(Vehicle):
                     ego_vel = get_speed(self._vehicle)
                     freeze_vehicle_transform = self._vehicle.get_transform()
                     
-                    waypoint = np.array([target_wp.transform.location.x, target_wp.transform.location.y, target_wp.transform.location.z])
+                    if isinstance(target_wp, carla.Location):
+                         waypoint = np.array([target_wp.x, target_wp.y, target_wp.z])
+                    else:
+                        waypoint = np.array([target_wp.transform.location.x, target_wp.transform.location.y, target_wp.transform.location.z])
+                        
                     bev_waypoint = self.waypoint_to_bev(waypoint, freeze_vehicle_transform)
                     preds = self._model(out_data['rgb'][:,:,:256,:].to(self.device), #[B, 3, H, W]
                                         torch.tensor(lidar_histogram).unsqueeze(0).to(self.device),
