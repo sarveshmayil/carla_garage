@@ -6,12 +6,12 @@ import cv2
 import open3d as o3d
 from matplotlib import cm
 
-from config import Config
-from control.controller_base import BaseController
-from control.pid_vehicle_control import PIDController
-from utils.misc import draw_waypoints
-from utils.lidar import *
-from leaderboard.envs.sensor_interface import CallBack, SensorInterface
+from project.config import Config
+from project.control.controller_base import BaseController
+from project.control.pid_vehicle_control import PIDController
+from project.utils.misc import draw_waypoints
+from project.utils.lidar import *
+from leaderboard.leaderboard.envs.sensor_interface import CallBack, SensorInterface, SpeedometerReader
 
 from typing import Tuple, Union, Optional, Dict
 
@@ -86,7 +86,8 @@ class Vehicle():
         blueprint:carla.ActorBlueprint = blueprint_library.find(vehicle_name)
         self._vehicle = self._world.spawn_actor(blueprint, spawnPoint)
 
-        self.setup_sensors()
+        sensor_list = self.get_sensor_config()
+        self.setup_sensors(sensor_list)
         self._world.tick()
 
     def get_sensor_config(self):
@@ -95,42 +96,76 @@ class Vehicle():
             sensors.append(cam)
         if self.vehicle_config.lidar is not None:
             sensors.append(self.vehicle_config.lidar)
+        if self.vehicle_config.other_sensors is not None:
+            sensors += self.vehicle_config.other_sensors
         return sensors
 
-    def setup_sensors(self):
+    def setup_sensors(self, sensor_list):
         bp_library = self._world.get_blueprint_library()
 
-        for sensor_spec in self.get_sensor_config():
-            bp = bp_library.find(str(sensor_spec['type']))
-            if sensor_spec['type'].startswith('sensor.camera'):
-                bp.set_attribute('image_size_x', str(sensor_spec['size'][0]))
-                bp.set_attribute('image_size_y', str(sensor_spec['size'][1]))
-                bp.set_attribute('fov', str(sensor_spec['fov']))
-                bp.set_attribute('lens_circle_multiplier', str(3.0))
-                bp.set_attribute('lens_circle_falloff', str(3.0))
-                bp.set_attribute('chromatic_aberration_intensity', str(0.5))
-                bp.set_attribute('chromatic_aberration_offset', str(0))
-                sensor_location = carla.Location(*sensor_spec['position'])
-                sensor_rotation = carla.Rotation(*sensor_spec['rotation'])
-            elif sensor_spec['type'].startswith('sensor.lidar'):
-                bp.set_attribute('range', str(85))
-                bp.set_attribute('rotation_frequency', str(sensor_spec['rot_freq']))
-                bp.set_attribute('channels', str(64))
-                bp.set_attribute('upper_fov', str(10))
-                bp.set_attribute('lower_fov', str(-30))
-                bp.set_attribute('points_per_second', str(sensor_spec['points_per_sec']))
-                bp.set_attribute('atmosphere_attenuation_rate', str(0.004))
-                bp.set_attribute('dropoff_general_rate', str(0.45))
-                bp.set_attribute('dropoff_intensity_limit', str(0.8))
-                bp.set_attribute('dropoff_zero_intensity', str(0.4))
-                sensor_location = carla.Location(*sensor_spec['position'])
-                sensor_rotation = carla.Rotation(*sensor_spec['rotation'])
+        for sensor_spec in sensor_list:
+            if sensor_spec['type'].startswith('sensor.speedometer'):
+                delta_time = self._world.get_settings().fixed_delta_seconds
+                frame_rate = 1 / delta_time
+                sensor = SpeedometerReader(self._vehicle, frame_rate)
+            else:
+                bp = bp_library.find(str(sensor_spec['type']))
+                if sensor_spec['type'].startswith('sensor.camera'):
+                    bp.set_attribute('image_size_x', str(sensor_spec['size'][0]))
+                    bp.set_attribute('image_size_y', str(sensor_spec['size'][1]))
+                    bp.set_attribute('fov', str(sensor_spec['fov']))
+                    bp.set_attribute('lens_circle_multiplier', str(3.0))
+                    bp.set_attribute('lens_circle_falloff', str(3.0))
+                    bp.set_attribute('chromatic_aberration_intensity', str(0.5))
+                    bp.set_attribute('chromatic_aberration_offset', str(0))
+                    sensor_location = carla.Location(*sensor_spec['position'])
+                    sensor_rotation = carla.Rotation(*sensor_spec['rotation'])
+                elif sensor_spec['type'].startswith('sensor.lidar'):
+                    bp.set_attribute('range', str(85))
+                    bp.set_attribute('rotation_frequency', str(sensor_spec['rot_freq']))
+                    bp.set_attribute('channels', str(64))
+                    bp.set_attribute('upper_fov', str(10))
+                    bp.set_attribute('lower_fov', str(-30))
+                    bp.set_attribute('points_per_second', str(sensor_spec['points_per_sec']))
+                    bp.set_attribute('atmosphere_attenuation_rate', str(0.004))
+                    bp.set_attribute('dropoff_general_rate', str(0.45))
+                    bp.set_attribute('dropoff_intensity_limit', str(0.8))
+                    bp.set_attribute('dropoff_zero_intensity', str(0.4))
+                    sensor_location = carla.Location(*sensor_spec['position'])
+                    sensor_rotation = carla.Rotation(*sensor_spec['rotation'])
+                elif sensor_spec['type'].startswith('sensor.other.radar'):
+                    bp.set_attribute('horizontal_fov', str(sensor_spec['fov']))  # degrees
+                    bp.set_attribute('vertical_fov', str(sensor_spec['fov']))  # degrees
+                    bp.set_attribute('points_per_second', '1500')
+                    bp.set_attribute('range', '100')  # meters
+                    sensor_location = carla.Location(*sensor_spec['position'])
+                    sensor_rotation = carla.Rotation(*sensor_spec['rotation'])
+                elif sensor_spec['type'].startswith('sensor.other.gnss'):
+                    bp.set_attribute('noise_alt_stddev', str(0.000005))
+                    bp.set_attribute('noise_lat_stddev', str(0.000005))
+                    bp.set_attribute('noise_lon_stddev', str(0.000005))
+                    bp.set_attribute('noise_alt_bias', str(0.0))
+                    bp.set_attribute('noise_lat_bias', str(0.0))
+                    bp.set_attribute('noise_lon_bias', str(0.0))
+                    sensor_location = carla.Location(*sensor_spec['position'])
+                    sensor_rotation = carla.Rotation()
+                elif sensor_spec['type'].startswith('sensor.other.imu'):
+                    bp.set_attribute('noise_accel_stddev_x', str(0.001))
+                    bp.set_attribute('noise_accel_stddev_y', str(0.001))
+                    bp.set_attribute('noise_accel_stddev_z', str(0.015))
+                    bp.set_attribute('noise_gyro_stddev_x', str(0.001))
+                    bp.set_attribute('noise_gyro_stddev_y', str(0.001))
+                    bp.set_attribute('noise_gyro_stddev_z', str(0.001))
+                    sensor_location = carla.Location(*sensor_spec['position'])
+                    sensor_rotation = carla.Rotation(*sensor_spec['rotation'])
 
-            # create sensor
-            sensor_transform = carla.Transform(sensor_location, sensor_rotation)
-            sensor = self._world.spawn_actor(bp, sensor_transform, attach_to=self._vehicle)
+                # create sensor
+                sensor_transform = carla.Transform(sensor_location, sensor_rotation)
+                sensor = self._world.spawn_actor(bp, sensor_transform, attach_to=self._vehicle)
             sensor.listen(CallBack(sensor_spec['id'], sensor_spec['type'], sensor, self._sensor_interface))
             self._sensors[sensor_spec['id']] = sensor
+
+            self._world.tick()
 
     def dist(self, target:Union[np.ndarray,carla.Waypoint,carla.Transform,carla.Location]) -> float:
         """

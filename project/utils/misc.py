@@ -1,7 +1,10 @@
 import math
 import carla
+from numpy import ndarray
 
-def draw_waypoints(world, waypoints, z=0.5, life_time=1.0):
+from typing import List, Union
+
+def draw_waypoints(world, waypoints:List[Union[carla.Waypoint, carla.Transform]], z=0.5, life_time=1.0):
     """
     Draw a list of waypoints at a certain height given in z.
 
@@ -11,8 +14,11 @@ def draw_waypoints(world, waypoints, z=0.5, life_time=1.0):
         :param life_time: life time of arrows (set to 0 for permanent)
     """
     for wpt in waypoints:
-        wpt_t = wpt.transform
-        begin = wpt_t.location + carla.Location(z=z)
-        angle = math.radians(wpt_t.rotation.yaw)
+        if isinstance(wpt, carla.Waypoint):
+            wpt = wpt.transform
+        elif isinstance(wpt, ndarray):
+            wpt = carla.Transform(carla.Location(x=wpt[0], y=wpt[1], z=0.0))
+        begin = wpt.location + carla.Location(z=z)
+        angle = math.radians(wpt.rotation.yaw)
         end = begin + carla.Location(x=math.cos(angle), y=math.sin(angle))
         world.debug.draw_arrow(begin, end, arrow_size=0.3, life_time=life_time)

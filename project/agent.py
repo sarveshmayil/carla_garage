@@ -9,16 +9,15 @@ import torch.nn.functional as F
 import carla
 from collections import deque
 
-from config import GlobalConfig, Config
+from .config import GlobalConfig, Config
 
 from utils.lidar import *
 from utils.image_noise import *
 
-from control.pid_vehicle_control import PIDController
 from model.tf_model_minimal import LidarCenterNet
-from leaderboard.autoagents import autonomous_agent
-from nav_planner import RoutePlanner, extrapolate_waypoint_route
-import transfuser_utils as t_u
+from leaderboard.leaderboard.autoagents import autonomous_agent
+from team_code.nav_planner import RoutePlanner, extrapolate_waypoint_route
+import team_code.transfuser_utils as t_u
 
 from filterpy.kalman import MerweScaledSigmaPoints
 from filterpy.kalman import UnscentedKalmanFilter as UKF
