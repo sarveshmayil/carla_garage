@@ -43,6 +43,28 @@ class Config:
             "id": 'lidar'
         }
 
+        self.other_sensors = [
+            {
+                "type": 'sensor.other.imu',
+                "position": [0.0, 0.0, 0.0],  # [x y z] position wrt car
+                "rotation": [0.0, 0.0, 0.0],   # [p r y]
+                "sensor_tick": 1.0 / 20.0,
+                "id": 'imu'
+            },
+            {
+                "type": 'sensor.other.gnss',
+                "position": [0.0, 0.0, 0.0],  # [x y z] position wrt car
+                "rotation": [0.0, 0.0, 0.0],   # [p r y]
+                "sensor_tick": 0.01,
+                "id": 'gps'
+            },
+            # {
+            #     "type": 'sensor.speedometer',
+            #     "reading_frequency": 20,
+            #     "id": 'speed'
+            # }
+        ]
+
         self.pid = {
           "lateral": {
             'K_P': 1.95,
