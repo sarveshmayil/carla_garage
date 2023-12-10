@@ -127,8 +127,8 @@ class ProjectAgent(autonomous_agent.AutonomousAgent):
                 'x': cam['position'][0],
                 'y': cam['position'][1],
                 'z': cam['position'][2],
-                'roll': cam['rotation'][0],
-                'pitch': cam['rotation'][1],
+                'roll': cam['rotation'][1],
+                'pitch': cam['rotation'][0],
                 'yaw': cam['rotation'][2],
                 'width': cam['size'][0],
                 'height': cam['size'][1],
@@ -142,8 +142,8 @@ class ProjectAgent(autonomous_agent.AutonomousAgent):
                 'x': self.vehicle_config.lidar['position'][0],
                 'y': self.vehicle_config.lidar['position'][1],
                 'z': self.vehicle_config.lidar['position'][2],
-                'roll': self.vehicle_config.lidar['rotation'][0],
-                'pitch': self.vehicle_config.lidar['rotation'][1],
+                'roll': self.vehicle_config.lidar['rotation'][1],
+                'pitch': self.vehicle_config.lidar['rotation'][0],
                 'yaw': self.vehicle_config.lidar['rotation'][2],
                 'id': self.vehicle_config.lidar['id']
             })
