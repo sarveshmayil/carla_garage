@@ -142,3 +142,5 @@ carla/
 /tools/proxy_simulator/map_data
 pretrained_models/
 *.pt*
+/noisy_images
+

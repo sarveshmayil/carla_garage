@@ -13,6 +13,8 @@ from model.tf_model_minimal import LidarCenterNet
 from utils.misc import draw_waypoints
 from utils.lidar import *
 from utils.image_noise import *
+from utils.image_saver import *
+
 from agents.tools.misc import get_speed
 
 from typing import Optional, Dict, Union
@@ -50,6 +52,9 @@ class Agent(Vehicle):
         self._model.load_state_dict(state_dict, strict=False)
 
         self.data_listener = data_listener
+
+        self.ImSaver = ImageSaver()
+
 
     @torch.inference_mode()
     def follow_route(self, tp_threshold=5.0, wp_threshold=7.0, visualize=False, debug=False):
@@ -226,6 +231,9 @@ class Agent(Vehicle):
                                                              intensity=False)
                 
         rgb = np.concatenate(rgb, axis=1)
+        self.ImSaver.saveImage(rgb.transpose(1,2,0), prefix='/1210_1/image')
+
+
         # cv2.imshow("b", rgb.transpose(1,2,0))
         rgb = torch.from_numpy(rgb).to(self.device, dtype=torch.float32).unsqueeze(0)
         # cv2.waitKey(1)
@@ -233,3 +241,4 @@ class Agent(Vehicle):
 
         return out_data
             
+``

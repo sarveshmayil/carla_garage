@@ -111,7 +111,8 @@ class ProjectAgent(autonomous_agent.AutonomousAgent):
         self.target_point_prev = [1e5, 1e5]
 
         self.lidar_buffer = np.empty((0,3))
-
+        self.imageCt = 0
+        
     def _init(self):
         # During setup() not everything is available yet, so this _init is a second setup in run_step()
         self._route_planner = RoutePlanner(self.model_config.route_planner_min_distance, self.model_config.route_planner_max_distance)
@@ -127,9 +128,9 @@ class ProjectAgent(autonomous_agent.AutonomousAgent):
                 'x': cam['position'][0],
                 'y': cam['position'][1],
                 'z': cam['position'][2],
-                'roll': cam['rotation'][1],
+                'roll': cam['rotation'][2],
                 'pitch': cam['rotation'][0],
-                'yaw': cam['rotation'][2],
+                'yaw': cam['rotation'][1],
                 'width': cam['size'][0],
                 'height': cam['size'][1],
                 'fov': cam['fov'],
@@ -142,9 +143,9 @@ class ProjectAgent(autonomous_agent.AutonomousAgent):
                 'x': self.vehicle_config.lidar['position'][0],
                 'y': self.vehicle_config.lidar['position'][1],
                 'z': self.vehicle_config.lidar['position'][2],
-                'roll': self.vehicle_config.lidar['rotation'][1],
+                'roll': self.vehicle_config.lidar['rotation'][2],
                 'pitch': self.vehicle_config.lidar['rotation'][0],
-                'yaw': self.vehicle_config.lidar['rotation'][2],
+                'yaw': self.vehicle_config.lidar['rotation'][1],
                 'id': self.vehicle_config.lidar['id']
             })
             self.sensor_keys.append(self.vehicle_config.lidar['id'])
@@ -180,6 +181,18 @@ class ProjectAgent(autonomous_agent.AutonomousAgent):
         ]
 
         return sensors + other_sensors
+
+
+
+    def saveImage(self, image, dir = "/home/malkstik/carla_garage/noisy_images", save = True):
+        cv2.imshow("b", image)
+        cv2.waitKey(1)
+
+        if save:
+            filename = dir+ "/1210_3/image "+ f"{self.imageCt:03d}.jpg"
+            print("saving to ", filename)
+            self.imageCt += 1
+            cv2.imwrite(filename, image)
 
     @torch.inference_mode()
     def tick(
@@ -224,6 +237,8 @@ class ProjectAgent(autonomous_agent.AutonomousAgent):
                                                              intensity=False)
                 
         rgb = np.concatenate(rgb, axis=1)
+        self.saveImage(cv2.cvtColor(rgb.transpose(1,2,0),  cv2.COLOR_BGR2RGB), save = False)
+
         rgb = torch.from_numpy(rgb).to(self.device, dtype=torch.float32).unsqueeze(0)
         out_data['rgb'] = rgb
 

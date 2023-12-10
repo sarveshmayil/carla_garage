@@ -10,7 +10,7 @@ class Config:
             {
                 "type": 'sensor.camera.rgb',
                 "position": [1.5, 0.0, 2.0],  # [x y z] position wrt car
-                "rotation": [0.0, 0.0, 0.0],   # [p r y]
+                "rotation": [0.0, 0.0, 0.0],   # [p y r]
                 "size": [1024, 256],            # [w h] of image
                 "fov": 110,
                 "id": 'rgb_front'
@@ -18,7 +18,7 @@ class Config:
             {
                 "type": 'sensor.camera.rgb',
                 "position": [0, -1.0, 2.0],  # [x y z] position wrt car
-                "rotation": [0.0, -30.0, 0.0],   # [p r y]
+                "rotation": [0.0, -30.0, 0.0],   # [p y r]
                 "size": [1024, 256],            # [w h] of image
                 "fov": 110,
                 "id": 'rgb_left'
@@ -26,7 +26,7 @@ class Config:
             {
                 "type": 'sensor.camera.rgb',
                 "position": [0, 1.0, 2.0],  # [x y z] position wrt car
-                "rotation": [0.0, 30.0, 0.0],   # [p r y]
+                "rotation": [0.0, 30.0, 0.0],   # [p y r]
                 "size": [1024, 256],            # [w h] of image
                 "fov": 110,
                 "id": 'rgb_right'
@@ -36,7 +36,7 @@ class Config:
         self.lidar = {
             "type": 'sensor.lidar.ray_cast',
             "position": [0.0, 0.0, 2.5],  # [x y z] position wrt car
-            "rotation": [0.0, 0.0, 0.0],   # [p r y]
+            "rotation": [0.0, 0.0, 0.0],   #[ p y r]
             "rot_freq": 10,  # Hz of lidar sensor
             "points_per_sec": 600000,
             "buffer_threshold": 60000,  # Min amount of points to collect before displaying
@@ -147,7 +147,7 @@ class GlobalConfig:
         'Dawn': 5.0,
         'Sunset': 15.0,
         'Morning': 35.0,
-        'Noon': 75.0,
+        'Noon': 75.0, 
     }
     # Max and min values by which the augmented camera is shifted left and right
     self.camera_translation_augmentation_min = -1.0

@@ -1,4 +1,4 @@
-export WORK_DIR=/home/hersh/repos/carla_garage
+export WORK_DIR=/home/malkstik/carla_garage
 
 export SCENARIOS=${WORK_DIR}/leaderboard/data/scenarios/eval_scenarios.json
 export ROUTES=${WORK_DIR}/leaderboard/data/longest6.xml
