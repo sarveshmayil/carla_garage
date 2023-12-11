@@ -12,7 +12,8 @@ FutureActor = carla.command.FutureActor
 
 class TrafficUwU:
     def __init__(self, idxA, idxB, host = "localhost", port = 2000, tm_port = 8000):
-        
+        random.seed(420)
+
         # Start and end points indices for route generation
         self.idxA = idxA
         self.idxB = idxB
